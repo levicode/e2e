@@ -155,19 +155,25 @@ export function slotFromJobName(name) {
 }
 
 /**
- * The step that runs each job's tests. A job without one (install, the native
+ * The steps that run each job's tests. A job without one (install, the native
  * runtime producer) has no test execution to lose, so it is not classified.
  */
 const TEST_STEPS = [
-  [/^test \((.+)\)$/, 'Unit and integration tests'],
-  [/^check$/, 'Testbed'],
-  [/^consumers$/, 'Run the reference consumer matrix with exact counts'],
+  [/^test \((.+)\)$/, ['Unit and integration tests']],
+  [/^check$/, ['UAT verification app tests', 'Agent skill and CI script tests', 'Testbed']],
+  [/^consumers$/, ['Run the reference consumer matrix with exact counts']],
+  [/^native-targeted$/, ['Pure contract checks and reviewed actual native pin', 'Compile default harness and run each exact regression once']],
+  [/^popup-joint$/, [
+    'Fault hook exact Rust controls before browser',
+    'Original official dependencies and fresh JS builds',
+    'Verify roles, install Chromium with production, probe, then one managed joint case',
+  ]],
 ];
 
-/** The test step of a matrix job, or undefined when the job runs no test. */
-export function testStepName(jobName) {
+/** The test steps of a matrix job, or undefined when the job runs no test. */
+export function testSteps(jobName) {
   if (typeof jobName !== 'string') return undefined;
-  for (const [pattern, step] of TEST_STEPS) if (pattern.test(jobName)) return step;
+  for (const [pattern, steps] of TEST_STEPS) if (pattern.test(jobName)) return steps;
   return undefined;
 }
 
@@ -185,17 +191,22 @@ function firstFailedStep(steps) {
  * stopped before the test step is unclassified and stays red.
  */
 export function classifyJobFailure({ job, log, entries }) {
-  const testStep = testStepName(job?.name);
-  if (testStep === undefined) return undefined;
+  const names = testSteps(job?.name);
+  if (names === undefined) return undefined;
   const steps = Array.isArray(job.steps) ? job.steps : [];
-  const test = steps.find(step => step !== null && typeof step === 'object' && step.name === testStep);
-  if (test?.conclusion === 'failure') return { kind: 'test', testsExecuted: true, step: testStep, reason: 'the test step failed' };
-  if (test?.conclusion === 'cancelled') {
+  const test = steps
+    .filter(step => step !== null && typeof step === 'object' && names.includes(step.name))
+    .toSorted((left, right) => (left.number ?? 0) - (right.number ?? 0));
+  const failedTest = test.find(step => step.conclusion === 'failure');
+  if (failedTest !== undefined) return { kind: 'test', testsExecuted: true, step: failedTest.name, reason: 'the test step failed' };
+  const cancelledTest = test.find(step => step.conclusion === 'cancelled');
+  if (cancelledTest !== undefined) {
     // The step started and was interrupted (the 45-minute timeout, a cancelled
     // run). Tests ran, but their outcome is unknown, so it is neither kind.
-    return { kind: 'unclassified', testsExecuted: true, outcome: 'unknown', step: testStep, reason: 'the test step was cancelled before it finished' };
+    return { kind: 'unclassified', testsExecuted: true, outcome: 'unknown', step: cancelledTest.name, reason: 'the test step was cancelled before it finished' };
   }
-  if (test?.conclusion === 'success') {
+  const passedTest = test.find(step => step.conclusion === 'success');
+  if (passedTest !== undefined) {
     // Tests ran and passed; the job fell over in a later step. That is not a
     // test failure and not this class, so it is reported as unclassified.
     const laterFailure = firstFailedStep(steps);
@@ -214,7 +225,6 @@ export function classifyJobFailure({ job, log, entries }) {
     kind: 'unclassified',
     testsExecuted: false,
     ...(firstFailure === undefined ? {} : { step: firstFailure.name }),
-    ...(test === undefined ? {} : { testStep, testStepConclusion: test.conclusion }),
   };
   if (firstFailure === undefined) return { ...base, reason: 'the job ended without a failed step, so no environment error is recorded' };
   if (typeof log !== 'string' || log === '') return { ...base, reason: `the log of ${firstFailure.name} is unavailable` };
@@ -254,7 +264,7 @@ export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImp
   const kinds = {};
   for (const job of jobs) {
     if (!['failure', 'timed_out', 'cancelled'].includes(job.conclusion)) continue;
-    if (testStepName(job.name) === undefined) continue;
+    if (testSteps(job.name) === undefined) continue;
     let verdict = classifyJobFailure({ job, entries });
     // Only a registered environment step can gain from the log; a Lint failure
     // is unclassified without reading it.
@@ -394,8 +404,9 @@ export function render(summaries, needs, annotations = {}, kinds = {}) {
     rows.push(`| ${summary.slot} | ${summary.status}${retried} | ${kind} | ${failed} |`);
   }
   const test = needs?.test?.result;
+  const classifiedSlot = Object.keys(kinds ?? {}).some(name => name.startsWith('test ('));
   const classifiedInfrastructure = Object.values(kinds ?? {}).some(kind => kind?.kind === 'infrastructure');
-  const missing = !classifiedInfrastructure && test !== undefined && test !== 'success' && test !== 'skipped' && summaries.every(summary => summary.status !== 'failure');
+  const missing = !classifiedSlot && !classifiedInfrastructure && test !== undefined && test !== 'success' && test !== 'skipped' && summaries.every(summary => summary.status !== 'failure');
   if (summaries.length === 0) rows.push('| — | — | — | no per-slot summary was uploaded |');
   const lines = [...rows];
   const audit = flakeRetryAudit(summaries);

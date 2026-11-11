@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { loadWhitelist } from './flake-retry.mjs';
-import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, fetchJobLog, parseLog, readSummaries, render, slotFromJobName, summarize, testStepName } from './spec-slot-summary.mjs';
+import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, fetchJobLog, parseLog, readSummaries, render, slotFromJobName, summarize, testSteps } from './spec-slot-summary.mjs';
 
 const log = [
   '  \u001b[1m\u001b[41m FAIL \u001b[49m\u001b[22m \u001b[30m\u001b[103m web \u001b[49m\u001b[39m explore\u001b[2m > \u001b[22mExplore the home page and find bugs',
@@ -222,12 +222,32 @@ function infrastructureEntries() {
     .map(entry => ({ ...entry, compiled: (entry.patterns ?? []).map(pattern => new RegExp(pattern)) }));
 }
 
-test('the test step is the only step that proves a test executed', () => {
-  assert.equal(testStepName('test (22.22.3)'), 'Unit and integration tests');
-  assert.equal(testStepName('check'), 'Testbed');
-  assert.equal(testStepName('consumers'), 'Run the reference consumer matrix with exact counts');
-  assert.equal(testStepName('install (11)'), undefined);
-  assert.equal(testStepName('native-runtime / build'), undefined);
+test('each job names every step that runs its tests', () => {
+  assert.deepEqual(testSteps('test (22.22.3)'), ['Unit and integration tests']);
+  assert.deepEqual(testSteps('check'), ['UAT verification app tests', 'Agent skill and CI script tests', 'Testbed']);
+  assert.deepEqual(testSteps('consumers'), ['Run the reference consumer matrix with exact counts']);
+  assert.equal(testSteps('native-targeted')?.length, 2);
+  assert.equal(testSteps('popup-joint')?.length, 3);
+  assert.equal(testSteps('install (11)'), undefined);
+  assert.equal(testSteps('native-runtime / build'), undefined);
+});
+
+test('a failure in either check test step is a test failure, not a missing test', () => {
+  const steps = [
+    { number: 9, name: 'UAT verification app tests', conclusion: 'failure' },
+    { number: 19, name: 'Agent skill and CI script tests', conclusion: 'skipped' },
+    { number: 22, name: 'Testbed', conclusion: 'skipped' },
+  ];
+  const uat = classifyJobFailure({ job: { name: 'check', conclusion: 'failure', steps }, entries: infrastructureEntries() });
+  assert.equal(uat.kind, 'test');
+  assert.equal(uat.testsExecuted, true);
+  assert.equal(uat.step, 'UAT verification app tests');
+  const scripted = classifyJobFailure({
+    job: { name: 'check', conclusion: 'failure', steps: steps.map(step => (step.number === 9 ? { ...step, conclusion: 'success' } : step.number === 19 ? { ...step, conclusion: 'failure' } : step)) },
+    entries: infrastructureEntries(),
+  });
+  assert.equal(scripted.kind, 'test');
+  assert.equal(scripted.step, 'Agent skill and CI script tests');
 });
 
 test('a skipped test step and the registered mirror error make infrastructure', () => {
@@ -390,6 +410,20 @@ test('the gate prints infrastructure and test failures in separate columns', () 
   assert.match(markdown, /::warning::test \(22\): infrastructure failure \(tests did not execute\)/);
   // The skipped slot is explained, so the "no summary" warning must not fire.
   assert.doesNotMatch(markdown, /no slot summary reports a failure/);
+});
+
+test('a failed job whose tests passed is not reported as a missing summary', () => {
+  const markdown = render([
+    { slot: '24', status: 'success', jobStatus: 'failure', exitCode: 0, testReached: true, failures: [], errors: [] },
+  ], { test: { result: 'failure' } }, {}, {
+    'test (24)': {
+      kind: 'unclassified', testsExecuted: true,
+      step: 'Bind popup evidence to this run, attempt, slot and Chromium',
+      reason: 'the test step passed, but Bind popup evidence to this run, attempt, slot and Chromium failed',
+    },
+  });
+  assert.doesNotMatch(markdown, /no slot summary reports a failure/);
+  assert.match(markdown, /unclassified \(tests executed; no test failed\)/);
 });
 
 test('without a classification a skipped slot says unclassified, never infrastructure', () => {
