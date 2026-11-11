@@ -199,11 +199,14 @@ export function classifyJobFailure({ job, log, entries }) {
     // Tests ran and passed; the job fell over in a later step. That is not a
     // test failure and not this class, so it is reported as unclassified.
     const laterFailure = firstFailedStep(steps);
+    const cause = laterFailure === undefined
+      ? (job.conclusion === 'cancelled' ? 'the job was cancelled afterward' : 'the job failed afterward')
+      : `${laterFailure.name} failed`;
     return {
       kind: 'unclassified',
       testsExecuted: true,
       ...(laterFailure === undefined ? {} : { step: laterFailure.name }),
-      reason: `the test step passed, but ${laterFailure === undefined ? 'a later step' : laterFailure.name} failed`,
+      reason: `the test step passed, but ${cause}`,
     };
   }
   const firstFailure = firstFailedStep(steps);
