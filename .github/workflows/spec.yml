@@ -259,6 +259,10 @@ jobs:
           E2E_UNSERVED_MODEL_CAPTURE: '1'
           E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
           E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
+          # A wait whose deadline falls between two polls ends with a
+          # one-millisecond native query. Its closed receipt names the exact
+          # settlement: local cancel, native code, effects and scope state.
+          E2E_SHORT_READ_DIAGNOSTIC: '1'
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
@@ -309,6 +313,7 @@ jobs:
           E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
           E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
           E2E_PLATFORM_HANDLER_DIAGNOSTIC: '1'
+          E2E_SHORT_READ_DIAGNOSTIC: '1'
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
