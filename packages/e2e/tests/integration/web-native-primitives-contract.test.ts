@@ -59,30 +59,47 @@ test('${CASES[2]}', async ({ browser }) => {
 });
 
 test('${CASES[3]}', { timeout: 12_000 }, async ({ browser }) => {
-  await browser.addInitScript(value => { globalThis.fixtureInit = value; }, { marker: 'synthetic' });
+  await browser.addInitScript(value => {
+    globalThis.fixtureInit = value;
+    globalThis.fixtureInitRuns = (globalThis.fixtureInitRuns ?? 0) + 1;
+  }, { marker: 'synthetic' });
   await browser.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   await browser.emulateMedia({ colorScheme: 'light' });
   await browser.goto('/a');
-  expect(await browser.evaluate(() => ({ marker: globalThis.fixtureAtFirstScript, light: matchMedia('(prefers-color-scheme: light)').matches, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches }))).toEqual({ marker: 'synthetic', light: true, reduce: true });
+  expect(await browser.evaluate(() => ({ marker: globalThis.fixtureAtFirstScript, runs: globalThis.fixtureAtFirstScriptRuns, light: matchMedia('(prefers-color-scheme: light)').matches, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches }))).toEqual({ marker: 'synthetic', runs: 1, light: true, reduce: true });
   expect(await browser.frameLocator('iframe').locator('body').getAttribute('data-init')).toBe('synthetic');
   const popup = await browser.evaluate(() => new Promise(resolve => {
     const child = window.open('/popup');
     if (!child) throw new Error('Synthetic popup was not created');
-    // CONTRACT: in a browser shared with another CDP client the popup's first
-    // document is best effort. Retry once through a document created after
-    // registration, which the init scripts are guaranteed to cover.
+    let firstDocument;
     let reloaded = false;
-    const timer = setInterval(() => {
-      if (child.fixtureAtFirstScript !== 'synthetic') {
-        if (!reloaded) { reloaded = true; child.location.reload(); }
+    const dispose = () => { removeEventListener('message', received); removeEventListener('pagehide', dispose); };
+    const received = event => {
+      if (event.source !== child || event.origin !== location.origin) return;
+      const data = event.data;
+      if (data?.kind !== 'fixture-boot') return;
+      if (!reloaded) {
+        // CONTRACT (#153): in a browser shared with another CDP client the
+        // popup's first document is best effort; its boot is used only to
+        // reload into the document created after registration.
+        firstDocument = { marker: data.marker, runs: data.runs };
+        reloaded = true;
+        child.location.reload();
         return;
       }
-      clearInterval(timer);
-      resolve({ marker: child.fixtureAtFirstScript, light: child.matchMedia('(prefers-color-scheme: light)').matches, reduce: child.matchMedia('(prefers-reduced-motion: reduce)').matches });
+      dispose();
+      const result = {
+        first: firstDocument,
+        reloaded: { marker: child.fixtureAtFirstScript, runs: child.fixtureAtFirstScriptRuns, light: child.matchMedia('(prefers-color-scheme: light)').matches, reduce: child.matchMedia('(prefers-reduced-motion: reduce)').matches },
+      };
       child.close();
-    }, 10);
+      resolve(result);
+    };
+    addEventListener('message', received);
+    addEventListener('pagehide', dispose, { once: true });
   }));
-  expect(popup).toEqual({ marker: 'synthetic', light: true, reduce: true });
+  expect(popup.reloaded, 'CONTRACT (#153): the document created after registration (reload) must see each init script exactly once; only a shared popup first document is best effort.').toEqual({ marker: 'synthetic', runs: 1, light: true, reduce: true });
+  expect(['', 'synthetic'], 'CONTRACT (#153): a shared popup first document is best effort and may miss the init scripts or run one twice; this records only the observed first-document outcome.').toContain(popup.first.marker);
   expect(await browser.url()).toMatch(/\\/a$/);
 });
 
