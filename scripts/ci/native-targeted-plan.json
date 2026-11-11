@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "f6c5ec0a1c0b5d0281fd2a08c0cf0efbefc7326e",
-    "tree": "ad445d9f50ea55cfed2a1813711ad3f0185ede06",
+    "commit": "23cc7c81f171918ed4619b636e12cadeb6c47a32",
+    "tree": "d649027bd21e76a7a26688b131b73d3563b3da9c",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -315,7 +315,10 @@
     "native::client_browser::reconnect_tests::a_producer_quarantine_still_publishes_the_remote_loss_notice",
     "native::client_transport::tests::reconnect_refused_inside_admission_on_a_quarantined_scope_settles_as_stale_scope",
     "native::client_browser::reconnect_tests::loss_noticed_after_publications_close_is_not_a_teardown_failure",
-    "native::client_observation::tests::display_none_prefilter_proves_only_element_iframe_owners"
+    "native::client_observation::tests::display_none_prefilter_proves_only_element_iframe_owners",
+    "native::client_debt::tests::failed_evaluation_retains_result_and_exception_objects_without_losing_the_owner",
+    "native::client_debt::tests::unaccounted_creation_handles_still_contaminate_beside_an_exception_object",
+    "native::client_transport::tests::terminal_close_after_shutdown_uses_cached_proof_without_request_revival"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
@@ -1658,517 +1661,517 @@
       {
         "name": "native::client_debt::tests::unpublished_non_pausing_autoattach_is_exact_observer_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_ingress_observation_preserves_existing_live_window",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_capture_before_reader_without_slot_cannot_install_stale_stamp",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_publication_pending_blocks_arm_and_final_consume_without_clearing_root",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_owned_event_fences_new_capture_after_old_slot_settles_before_publish",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_incomplete_or_overlapping_publication_never_reopens_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_created_foreign_observer_and_recording_events_do_not_revoke",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_final_submit_rejects_pre_admitted_unrelated_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_revoke_before_consume_has_no_child_mutation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_consume_before_revoke_keeps_both_debts_and_late_ack_never_reopens",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_root_terminal_and_authority_change_each_reject_reserved_child",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_permit_is_one_child_and_exact_owner_not_just_equal_numeric_keys",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_admission_preserves_token_first_cause_before_clock_expiry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_reservation_failure_before_commit_does_not_leave_a_half_reservation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_native_identity_and_owner_retirement_revoke_before_reserved_child_submit",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eval_failure_receipt_is_not_cleared_by_full_late_ack_and_producer_settlement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_receipt_is_exact_and_not_minted_from_revocation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::admission_stop_expired_original_deadline_keeps_legacy_error_and_typed_cause",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_waiters_all_wake_on_exact_reader_ack_without_forgiving_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_deadline_and_cancel_keep_unsettled_input_owned",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_rechecks_authority_after_ack_and_never_revives_failed_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::reference_admission_eof_and_context_retirement_wake_without_admitting",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::cleanup_object_capacity_waits_for_the_bounded_pool_to_drain",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::cleanup_object_capacity_uses_the_operation_deadline",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::cleanup_release_permits_admit_lanes_as_slots_free_without_oversubscribing",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::submission_not_waiter_lifetime_owns_debt_and_ack_does_not_erase_dispatch",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::quotas_do_not_borrow_recording_security_or_destroy_slots",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::native_group_accounts_many_roots_and_property_handles_as_one_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::early_release_ack_cannot_discharge_late_creation_and_disposal_is_once_only",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::unsent_old_receipt_never_submits_into_or_drops_a_later_group_lifecycle",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::abandoning_unsubmitted_group_does_not_leak_an_obligation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_release_before_exact_realm_destroy_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_pending_release_exact_session_detach_is_discharged",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_wrong_realm_session_or_frame_detach_keeps_rejected_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_preserves_pending_and_rejected_cleanup_on_realm_destroy",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_new_context_epoch_never_borrows_prior_realm_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_child_group_detach_discharges_only_child_and_preserves_parent_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_group_consumes_without_new_release_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_live_release_retains_exact_pending_command_until_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_foreign_owner_operation_session_and_name_never_consume_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_old_receipt_cannot_consume_reused_name_or_new_realm_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_mixed_unknown_creator_never_acquires_destroyed_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_unsent_abandonment_keeps_legacy_strict_disposal_not_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_integrity_loss_cannot_borrow_prior_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_never_discharges_other_rejected_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_claim_and_reserve_removes_only_own_unsent_release",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destruction_between_reserve_and_finish_accepts_only_destroyed_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_name_alone_cannot_mint_receipt_for_registered_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_context_epoch_reuse_without_new_group_refuses_old_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_pending_unknown_creator_and_late_ack_preserve_cleanup_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_rejected_release_never_turns_into_success_or_retry",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_retired_owner_never_uses_destruction_noop",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_destroyed_receipt_preserves_unrelated_pending_input",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::captured_readonly_child_detach_noop_preserves_parent_group",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_group_unknown_creator_after_release_reservation_revokes_realm_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_destruction_discharges_object_component_but_not_input_effect",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::only_exact_context_ack_can_retire_owner_and_eof_never_clears_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_is_exact_and_never_restores_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_relinquishment_retains_unknown_child_and_command_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::geometry_lane_admission_bounds_concurrent_exact_reads",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::geometry_lane_admission_never_admits_a_retired_scope",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::geometry_lane_admission_uses_the_operation_deadline",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::geometry_lane_admission_waits_for_object_room",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_observer_failed_commit_preserves_index_and_ledger",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_certificate_rejects_forged_envelopes_and_retains_debt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::terminal_read_only_settled_ack_requires_operation_proof_and_exact_bindings",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_is_read_only_exact_borrowed_owner_evidence_not_admission",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_refuses_every_live_resource_and_uncertain_context",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::eof_never_acknowledges_commands_or_pending_acquisition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::final_local_eof_contamination_survives_exact_debt_destruction",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::retired_owner_cleanup_is_one_shot_accounted_and_not_application_authority",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::realm_metadata_is_bounded_and_counted_without_borrowing_destroy_reserve",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::thirty_third_group_is_rejected_without_losing_existing_native_groups",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::malformed_or_foreign_response_never_becomes_an_input_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::receiver_drop_between_settlement_and_delivery_still_selects_exact_disposal",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::revoked_journal_rejects_old_application_step_but_admits_mandatory_cleanup",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_rejected_input_reply_is_terminal_failure_not_release_proof",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::validated_error_reply_requires_exact_reader_envelope_not_unknown_or_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_retires_only_its_exact_rejections_without_success_ack",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::point_drag_cleanup_proof_rejects_mixed_unknown_cleanup_and_wrong_scope_without_partial_retirement",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::rejected_object_release_is_retained_debt_not_cleanup_success",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_keeps_owned_debt_and_never_settles_producers",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::exact_eof_object_handoff_rejects_nonexact_or_contaminated_responsibility",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::recording_start_status_tests::recording_refusal_requires_exact_error_ack_not_success_or_terminal_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_requires_exact_operation_release_and_disposition",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::node_resample_cleanup_guard_tests::rejected_cleanup_predicate_refuses_retired_integrity_lost_and_poisoned_owner",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
@@ -4244,37 +4247,37 @@
       {
         "name": "native::client_debt::tests::readonly_capture_scope_does_not_duplicate_large_future_storage",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::readonly_capture_scope_is_poll_local_and_cancellation_preserves_custody",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_unsubmitted_reservation_preserves_actual_abandonment_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_already_destroyed_unsent_reservation_preserves_exact_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_old_destroyed_reservation_never_changes_new_command_or_its_status",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::dropping_missing_unsent_command_cannot_fabricate_a_terminal_receipt",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
@@ -4580,7 +4583,7 @@
       {
         "name": "native::client_debt::tests::navigation_lifecycle_setup_is_not_application_mutation",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
@@ -4718,19 +4721,19 @@
       {
         "name": "native::client_debt::tests::a_mismatched_named_session_still_loses_ledger_integrity",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::an_omitted_session_on_a_success_reply_still_loses_ledger_integrity",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
         "name": "native::client_debt::tests::browser_level_session_not_found_discharges_the_exact_retired_session",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
@@ -4760,7 +4763,7 @@
       {
         "name": "native::client_debt::tests::exact_session_retirement_requires_the_applied_detach_and_intact_ledger",
         "path": "cli/src/native/client_debt.rs",
-        "sha256": "750bbbcd92fe2935030fd30c6949b6cfcfb12cd5d1823f21b7a963adf8e0195d",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       },
       {
@@ -4773,6 +4776,18 @@
         "name": "native::client_observation::tests::display_none_prefilter_proves_only_element_iframe_owners",
         "path": "cli/src/native/client_observation.rs",
         "sha256": "3ed42b5a770da9a1acc0bdbbaece2f053fc06ce998ea0c1cbe274bd047b8ba68",
+        "ignored": false
+      },
+      {
+        "name": "native::client_debt::tests::failed_evaluation_retains_result_and_exception_objects_without_losing_the_owner",
+        "path": "cli/src/native/client_debt.rs",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
+        "ignored": false
+      },
+      {
+        "name": "native::client_debt::tests::unaccounted_creation_handles_still_contaminate_beside_an_exception_object",
+        "path": "cli/src/native/client_debt.rs",
+        "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
       }
     ],
