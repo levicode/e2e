@@ -62,6 +62,19 @@ test('the committed known-flake list is valid and only lists evidence-backed sig
   }
 });
 
+test('an infrastructure entry that names a step without patterns fails to load', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'flake-retry-list-'));
+  try {
+    const file = path.join(directory, 'known-flakes.json');
+    writeFileSync(file, JSON.stringify({
+      entries: [{ id: 'step-only', kind: 'infrastructure', step: 'Set up source-pinned native runtime', gateVisible: true }],
+    }));
+    assert.throws(() => loadWhitelist(file), /step-only names a step without patterns/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('a failure block is the vitest text after its FAIL line, not a child CLI FAIL line', () => {
   const blocks = failureBlocks(scopeLog);
   assert.equal(blocks.size, 1);

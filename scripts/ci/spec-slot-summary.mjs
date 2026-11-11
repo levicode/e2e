@@ -162,12 +162,6 @@ const TEST_STEPS = [
   [/^test \((.+)\)$/, ['Unit and integration tests']],
   [/^check$/, ['UAT verification app tests', 'Agent skill and CI script tests', 'Testbed']],
   [/^consumers$/, ['Run the reference consumer matrix with exact counts']],
-  [/^native-targeted$/, ['Pure contract checks and reviewed actual native pin', 'Compile default harness and run each exact regression once']],
-  [/^popup-joint$/, [
-    'Fault hook exact Rust controls before browser',
-    'Original official dependencies and fresh JS builds',
-    'Verify roles, install Chromium with production, probe, then one managed joint case',
-  ]],
 ];
 
 /** The test steps of a matrix job, or undefined when the job runs no test. */
@@ -275,7 +269,7 @@ export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImp
     // Only a registered environment step can gain from the log; a Lint failure
     // is unclassified without reading it.
     const registered = verdict.kind === 'unclassified' && verdict.step !== undefined
-      && entries.some(entry => entry.step === verdict.step && entry.compiled.length > 0);
+      && entries.some(entry => entry.step === verdict.step && Array.isArray(entry.compiled) && entry.compiled.length > 0);
     if (registered && typeof readLog === 'function') {
       const log = await readLog(job);
       if (typeof log === 'string') verdict = classifyJobFailure({ job, log, entries });

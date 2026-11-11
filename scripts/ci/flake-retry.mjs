@@ -74,6 +74,10 @@ export function loadWhitelist(file) {
     if (entry.kind === 'test-signature' && (!Array.isArray(entry.patterns) || entry.patterns.length === 0)) {
       throw new Error(`${entry.id} has no patterns`);
     }
+    // A step alone cannot prove the environment error; the log must match.
+    if (entry.step !== undefined && (!Array.isArray(entry.patterns) || entry.patterns.length === 0)) {
+      throw new Error(`${entry.id} names a step without patterns`);
+    }
     if (Array.isArray(entry.patterns)) entry.compiled = entry.patterns.map(pattern => new RegExp(pattern));
   }
   return value;

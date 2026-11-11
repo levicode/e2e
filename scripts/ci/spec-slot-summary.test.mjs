@@ -222,12 +222,14 @@ function infrastructureEntries() {
     .map(entry => ({ ...entry, compiled: (entry.patterns ?? []).map(pattern => new RegExp(pattern)) }));
 }
 
-test('each job names every step that runs its tests', () => {
+test('each classified job names every step that runs its tests', () => {
   assert.deepEqual(testSteps('test (22.22.3)'), ['Unit and integration tests']);
   assert.deepEqual(testSteps('check'), ['UAT verification app tests', 'Agent skill and CI script tests', 'Testbed']);
   assert.deepEqual(testSteps('consumers'), ['Run the reference consumer matrix with exact counts']);
-  assert.equal(testSteps('native-targeted')?.length, 2);
-  assert.equal(testSteps('popup-joint')?.length, 3);
+  // The branch-gated jobs only run on one integration branch and mix setup
+  // with tests in the same step, so the gate does not classify them.
+  assert.equal(testSteps('native-targeted'), undefined);
+  assert.equal(testSteps('popup-joint'), undefined);
   assert.equal(testSteps('install (11)'), undefined);
   assert.equal(testSteps('native-runtime / build'), undefined);
 });
