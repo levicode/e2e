@@ -189,8 +189,17 @@ export function classifyJobFailure({ job, log, entries }) {
   if (testStep === undefined) return undefined;
   const steps = Array.isArray(job.steps) ? job.steps : [];
   const test = steps.find(step => step !== null && typeof step === 'object' && step.name === testStep);
-  if (test !== undefined && (test.conclusion === 'success' || test.conclusion === 'failure')) {
-    return { kind: 'test', testsExecuted: true, step: testStep, reason: 'the test step ran' };
+  if (test?.conclusion === 'failure') return { kind: 'test', testsExecuted: true, step: testStep, reason: 'the test step failed' };
+  if (test?.conclusion === 'success') {
+    // Tests ran and passed; the job fell over in a later step. That is not a
+    // test failure and not this class, so it is reported as unclassified.
+    const laterFailure = firstFailedStep(steps);
+    return {
+      kind: 'unclassified',
+      testsExecuted: true,
+      ...(laterFailure === undefined ? {} : { step: laterFailure.name }),
+      reason: `the test step passed, but ${laterFailure === undefined ? 'a later step' : laterFailure.name} failed`,
+    };
   }
   const firstFailure = firstFailedStep(steps);
   const base = {
@@ -305,12 +314,17 @@ export async function fetchAnnotations({ repo, run, token, fetchImpl = fetch }) 
   return slots;
 }
 
+/** The kind column's fixed label: infrastructure, test, or why it is neither. */
+function kindLabel(verdict) {
+  if (verdict.kind === 'infrastructure') return 'infrastructure (tests did not execute)';
+  if (verdict.kind === 'test') return 'test';
+  return verdict.testsExecuted ? 'unclassified (tests executed; no test failed)' : 'unclassified (tests did not execute)';
+}
+
 /** The failure kind cell: what the gate can prove about this slot's failure. */
 function failureKindCell(summary, verdict) {
   if (summary.status === 'success') return '—';
-  if (verdict?.kind === 'infrastructure') return 'infrastructure (tests did not execute)';
-  if (verdict?.kind === 'test') return 'test';
-  if (verdict?.kind === 'unclassified') return 'unclassified (tests did not execute)';
+  if (verdict !== undefined && verdict !== null) return kindLabel(verdict);
   // A missing classification must not claim tests ran, and must not call an
   // unexplained setup failure infrastructure.
   return summary.testReached ? 'test' : 'unclassified (tests did not execute)';
@@ -332,9 +346,7 @@ function failedJobsSection(kinds) {
   ];
   for (const name of names) {
     const verdict = kinds[name];
-    const kind = verdict.kind === 'infrastructure'
-      ? 'infrastructure (tests did not execute)'
-      : verdict.kind === 'test' ? 'test' : 'unclassified (tests did not execute)';
+    const kind = kindLabel(verdict);
     const step = verdict.step === undefined ? '—' : `\`${cell(verdict.step)}\``;
     const evidence = verdict.entry === undefined ? cell(verdict.reason ?? '') : `\`${cell(verdict.entry)}\``;
     lines.push(`| ${cell(name)} | ${kind} | ${step} | ${evidence} |`);

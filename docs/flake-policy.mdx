@@ -49,7 +49,7 @@ Both entries are the same kind at two different phases. `phase` is `job-acquisit
 
 ## Reading the gate summary
 
-`spec gate` prints two tables. The per-slot table has a `failure kind` column: `test`, `infrastructure (tests did not execute)`, or `unclassified (tests did not execute)`. The failed-jobs table names every failed job that runs tests, its kind, the first failed step, and either the registered signature that matched or the reason it did not. An infrastructure row is also announced with a warning on the run, so the attempt is marked as not evidence even though the gate is red.
+`spec gate` prints two tables. The per-slot table has a `failure kind` column: `test`, `infrastructure (tests did not execute)`, or `unclassified` with the reason (tests did not execute, or they executed and no test failed). The failed-jobs table names every failed job that runs tests, its kind, the first failed step, and either the registered signature that matched or the reason it did not. An infrastructure row is also announced with a warning on the run, so the attempt is marked as not evidence even though the gate is red.
 
 ## The known flakes
 

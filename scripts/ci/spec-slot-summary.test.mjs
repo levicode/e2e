@@ -246,6 +246,23 @@ test('a failed test step is a test failure even when the log quotes the same env
   assert.equal(verdict.step, 'Unit and integration tests');
 });
 
+test('a job whose tests passed but a later step failed is not a test failure', () => {
+  const job = {
+    name: 'test (24)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'success' },
+      { number: 15, name: 'Bind popup evidence to this run, attempt, slot and Chromium', conclusion: 'failure' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.step, 'Bind popup evidence to this run, attempt, slot and Chromium');
+  assert.match(verdict.reason, /the test step passed/);
+});
+
 test('a setup failure the list does not explain stays unclassified', () => {
   const pinJob = {
     name: 'test (26)',
