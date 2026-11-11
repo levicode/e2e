@@ -8,7 +8,6 @@
  * the test step's own exit code is the verdict, and this summary only
  * describes it.
  */
-import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -465,7 +464,7 @@ async function main(argv) {
         run: options.get('run'),
         token,
         entries,
-        readLog: job => githubJobLog(repo, job),
+        readLog: job => fetchJobLog({ repo, job, token }),
       });
       writeFileSync(options.get('output'), `${JSON.stringify({ schemaVersion: 1, run: Number(options.get('run')), jobs: kinds }, null, 2)}\n`);
       process.stdout.write(`spec job kinds: ${Object.keys(kinds).length} failed job(s) classified\n`);
@@ -499,14 +498,24 @@ async function main(argv) {
   process.exitCode = 2;
 }
 
-/** Read one job's log through gh; the REST log endpoint is a zip, gh unpacks it. */
-function githubJobLog(repo, job) {
-  const result = spawnSync('gh', ['run', 'view', '--repo', repo, '--job', String(job.id), '--log'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  if (result.error !== undefined || result.status !== 0) {
-    process.stderr.write(`::warning::could not read the log of ${job.name}: ${result.error?.message ?? `gh exited ${result.status}`}\n`);
+/**
+ * Read one completed job's log over REST. `gh run view --log` refuses while the
+ * run is in progress, and the gate is the last job of the run it inspects, so
+ * the jobs endpoint is the only source: it answers once the job is complete,
+ * whatever the run status.
+ */
+export async function fetchJobLog({ repo, job, token, fetchImpl = fetch }) {
+  try {
+    const response = await fetchImpl(`https://api.github.com/repos/${repo}/actions/jobs/${job.id}/logs`, {
+      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}` },
+      redirect: 'follow',
+    });
+    if (!response.ok) throw new Error(`answered ${response.status}`);
+    return await response.text();
+  } catch (cause) {
+    process.stderr.write(`::warning::could not read the log of ${job.name}: ${cause instanceof Error ? cause.message : String(cause)}\n`);
     return undefined;
   }
-  return result.stdout ?? '';
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

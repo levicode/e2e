@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { loadWhitelist } from './flake-retry.mjs';
-import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, parseLog, readSummaries, render, slotFromJobName, summarize, testStepName } from './spec-slot-summary.mjs';
+import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, fetchJobLog, parseLog, readSummaries, render, slotFromJobName, summarize, testStepName } from './spec-slot-summary.mjs';
 
 const log = [
   '  \u001b[1m\u001b[41m FAIL \u001b[49m\u001b[22m \u001b[30m\u001b[103m web \u001b[49m\u001b[39m explore\u001b[2m > \u001b[22mExplore the home page and find bugs',
@@ -323,6 +323,23 @@ test('the failed jobs API is classified per job and only test-bearing jobs are l
   assert.equal(kinds['test (22)'].kind, 'infrastructure');
   assert.equal(kinds['test (24)'].kind, 'test');
   assert.equal(kinds.check.kind, 'unclassified');
+});
+
+test('a job log is read over REST, so a run still in progress yields it', async () => {
+  const calls = [];
+  const text = await fetchJobLog({
+    repo: 'levicode/e2e', job: { id: 7, name: 'test (22)' }, token: 't',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return { ok: true, text: async () => aptMirrorLog }; },
+  });
+  assert.equal(text, aptMirrorLog);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/levicode/e2e/actions/jobs/7/logs');
+  assert.equal(calls[0].options.headers.authorization, 'Bearer t');
+  assert.equal(calls[0].options.redirect, 'follow');
+  const missing = await fetchJobLog({
+    repo: 'levicode/e2e', job: { id: 7, name: 'test (22)' }, token: 't',
+    fetchImpl: async () => ({ ok: false, status: 404 }),
+  });
+  assert.equal(missing, undefined);
 });
 
 test('the gate prints infrastructure and test failures in separate columns', () => {
