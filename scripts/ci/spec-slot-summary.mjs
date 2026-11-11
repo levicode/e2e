@@ -11,6 +11,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadWhitelist } from './flake-retry.mjs';
 
 const MAX_FAILURES = 50;
 const MAX_REASON = 300;
@@ -454,10 +455,9 @@ async function main(argv) {
     const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
     if (token === undefined) { process.stderr.write('inspect needs GH_TOKEN\n'); process.exitCode = 2; return; }
     const repo = options.get('repo');
-    const whitelist = JSON.parse(readFileSync(options.get('whitelist'), 'utf8'));
-    const entries = (Array.isArray(whitelist.entries) ? whitelist.entries : [])
-      .filter(entry => entry.kind === 'infrastructure')
-      .map(entry => ({ ...entry, compiled: Array.isArray(entry.patterns) ? entry.patterns.map(pattern => new RegExp(pattern)) : [] }));
+    // One loader for the list, so a bad pattern fails the gate instead of
+    // silently missing every signature.
+    const entries = loadWhitelist(options.get('whitelist')).entries.filter(entry => entry.kind === 'infrastructure');
     try {
       const kinds = await fetchJobFailureKinds({
         repo,
