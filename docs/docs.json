@@ -173,7 +173,8 @@
               "ci/eas-workflows",
               "ci/bitrise",
               "ci/codemagic",
-              "github"
+              "github",
+              "flake-policy"
             ]
           },
           {
