@@ -205,22 +205,39 @@ export function classifyJobFailure({ job, log, entries }) {
     // run). Tests ran, but their outcome is unknown, so it is neither kind.
     return { kind: 'unclassified', testsExecuted: true, outcome: 'unknown', step: cancelledTest.name, reason: 'the test step was cancelled before it finished' };
   }
+  const firstFailure = firstFailedStep(steps);
+  // A registered environment step decides first: `check` runs preflight tests
+  // before its native setup, so a passed preflight step must not hide the
+  // setup failure that stopped the suite.
+  if (firstFailure !== undefined && typeof log === 'string' && log !== '') {
+    const matched = (Array.isArray(entries) ? entries : []).find(entry => entry.step === firstFailure.name
+      && Array.isArray(entry.compiled)
+      && entry.compiled.length > 0
+      && entry.compiled.every(expression => expression.test(log)));
+    if (matched !== undefined) {
+      return {
+        kind: 'infrastructure',
+        testsExecuted: false,
+        step: firstFailure.name,
+        entry: matched.id,
+        reason: `${firstFailure.name} failed with the registered environment error of ${matched.id}`,
+      };
+    }
+  }
   const passedTest = test.find(step => step.conclusion === 'success');
   if (passedTest !== undefined) {
     // Tests ran and passed; the job fell over in a later step. That is not a
     // test failure and not this class, so it is reported as unclassified.
-    const laterFailure = firstFailedStep(steps);
-    const cause = laterFailure === undefined
+    const cause = firstFailure === undefined
       ? (job.conclusion === 'cancelled' ? 'the job was cancelled afterward' : 'the job failed afterward')
-      : `${laterFailure.name} failed`;
+      : `${firstFailure.name} failed`;
     return {
       kind: 'unclassified',
       testsExecuted: true,
-      ...(laterFailure === undefined ? {} : { step: laterFailure.name }),
+      ...(firstFailure === undefined ? {} : { step: firstFailure.name }),
       reason: `the test step passed, but ${cause}`,
     };
   }
-  const firstFailure = firstFailedStep(steps);
   const base = {
     kind: 'unclassified',
     testsExecuted: false,
@@ -228,18 +245,7 @@ export function classifyJobFailure({ job, log, entries }) {
   };
   if (firstFailure === undefined) return { ...base, reason: 'the job ended without a failed step, so no environment error is recorded' };
   if (typeof log !== 'string' || log === '') return { ...base, reason: `the log of ${firstFailure.name} is unavailable` };
-  const matched = (Array.isArray(entries) ? entries : []).find(entry => entry.step === firstFailure.name
-    && Array.isArray(entry.compiled)
-    && entry.compiled.length > 0
-    && entry.compiled.every(expression => expression.test(log)));
-  if (matched === undefined) return { ...base, reason: `${firstFailure.name} carries no registered environment error` };
-  return {
-    kind: 'infrastructure',
-    testsExecuted: false,
-    step: firstFailure.name,
-    entry: matched.id,
-    reason: `${firstFailure.name} failed with the registered environment error of ${matched.id}`,
-  };
+  return { ...base, reason: `${firstFailure.name} carries no registered environment error` };
 }
 
 /**

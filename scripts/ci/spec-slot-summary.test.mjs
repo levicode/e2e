@@ -259,6 +259,26 @@ test('a skipped test step and the registered mirror error make infrastructure', 
   assert.match(verdict.reason, /registered environment error/);
 });
 
+test('a check setup failure after its preflight tests passed is still infrastructure', () => {
+  const job = {
+    name: 'check',
+    conclusion: 'failure',
+    steps: [
+      { number: 9, name: 'UAT verification app tests', conclusion: 'success' },
+      { number: 19, name: 'Agent skill and CI script tests', conclusion: 'success' },
+      { number: 20, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+      { number: 22, name: 'Testbed', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'infrastructure');
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  const unproven = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(unproven.kind, 'unclassified');
+  assert.equal(unproven.testsExecuted, true);
+  assert.match(unproven.reason, /the test step passed, but Set up source-pinned native runtime failed/);
+});
+
 test('a failed test step is a test failure even when the log quotes the same environment error', () => {
   const verdict = classifyJobFailure({ job: failedTestJob, log: aptMirrorLog, entries: infrastructureEntries() });
   assert.equal(verdict.kind, 'test');
