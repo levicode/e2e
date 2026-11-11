@@ -116,3 +116,53 @@ it('publishes actionable depth-four srcdoc content but omits a loaded depth-five
     await fixture.close();
   }
 });
+
+it('observes a host whose display-none child frames are loaded without failing the frame inventory', async () => {
+  const fixtureApp = await startFixtureApp();
+  const artifactsDir = mkdtempSync(path.join(tmpdir(), 'e2e-observation-hidden-frame-'));
+  const engine = web();
+  const app = { site: new URL(fixtureApp.url).hostname };
+  const operation = (): OperationContext => ({
+    signal: new AbortController().signal, timeoutMs: 10_000,
+    runId: 'observation-hidden-frame', attemptId: 'hidden-frame-1', origin: 'test',
+  });
+  const cleanup = () => ({ signal: new AbortController().signal, timeoutMs: 30_000 });
+  try {
+    await engine.init!({
+      runId: 'observation-hidden-frame', targetName: 'web', projectRoot: process.cwd(),
+      app, env: process.env, headed: false, workerSlot: 0,
+      signal: new AbortController().signal, log: () => undefined,
+    });
+    await engine.startAttempt!({
+      attemptId: 'hidden-frame-1', artifactsDir, signal: new AbortController().signal,
+      resolveSecret: noSecrets, ...ignoreTrace,
+    });
+    await engine.session!.open!(fixtureApp.url, operation());
+    const browser = nativeBrowser(engine, operation, fixtureApp.url);
+    // The offsite child is a different site on the same owned loopback server.
+    const offsite = fixtureApp.url.replace('127.0.0.1', 'localhost');
+    await nativeDocument(browser, `<h1>Hidden frame host</h1>
+      <iframe id="visible" style="border:0;width:200px;height:80px" onload="this.dataset.loaded = 'yes'" src="${fixtureApp.url}/form"></iframe>
+      <iframe id="hidden" style="display:none" onload="this.dataset.loaded = 'yes'" src="${fixtureApp.url}/values"></iframe>
+      <iframe id="hidden-offsite" style="display:none" onload="this.dataset.loaded = 'yes'" src="${offsite}/form"></iframe>`);
+    // The replacement document's load waits for every child document.
+    expect(await browser.evaluate(() => Array.from(document.querySelectorAll<HTMLIFrameElement>('iframe')).map(frame => frame.dataset['loaded'] ?? ''))).toEqual(['yes', 'yes', 'yes']);
+    // The hidden same-site child loaded its own document before the observation.
+    expect(await browser.evaluate(() => document.querySelector<HTMLIFrameElement>('#hidden')!.contentDocument!.querySelector('h1')!.textContent)).toBe('Values');
+
+    const snapshot = await engine.observe!({ ...operation(), origin: 'agent' });
+    const headings = observedNodes(snapshot.root).filter(node => node.role === 'heading').map(node => node.name);
+    // The visible child projects; both loaded display-none children stay outside the observation.
+    expect(headings).toContain('Hidden frame host');
+    expect(headings.filter(name => name === 'Form')).toHaveLength(1);
+    expect(headings).not.toContain('Values');
+    expect(JSON.stringify(snapshot.root)).not.toContain('Values');
+    await engine.endAttempt!(cleanup());
+  } finally {
+    try { await engine.dispose!(cleanup()); }
+    finally {
+      try { await fixtureApp.close(); }
+      finally { rmSync(artifactsDir, { recursive: true, force: true }); }
+    }
+  }
+});
