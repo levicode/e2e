@@ -220,6 +220,7 @@ export function classifyJobFailure({ job, log, entries }) {
   if (typeof log !== 'string' || log === '') return { ...base, reason: `the log of ${firstFailure.name} is unavailable` };
   const matched = (Array.isArray(entries) ? entries : []).find(entry => entry.step === firstFailure.name
     && Array.isArray(entry.compiled)
+    && entry.compiled.length > 0
     && entry.compiled.every(expression => expression.test(log)));
   if (matched === undefined) return { ...base, reason: `${firstFailure.name} carries no registered environment error` };
   return {
@@ -258,7 +259,7 @@ export async function fetchJobFailureKinds({ repo, run, token, entries, fetchImp
     // Only a registered environment step can gain from the log; a Lint failure
     // is unclassified without reading it.
     const registered = verdict.kind === 'unclassified' && verdict.step !== undefined
-      && entries.some(entry => entry.step === verdict.step);
+      && entries.some(entry => entry.step === verdict.step && entry.compiled.length > 0);
     if (registered && typeof readLog === 'function') {
       const log = await readLog(job);
       if (typeof log === 'string') verdict = classifyJobFailure({ job, log, entries });

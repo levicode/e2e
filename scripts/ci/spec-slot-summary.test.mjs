@@ -300,6 +300,13 @@ test('a setup failure the list does not explain stays unclassified', () => {
   assert.match(verdict.reason, /carries no registered environment error/);
 });
 
+test('a step without a registered log pattern is not infrastructure', () => {
+  const entries = [{ id: 'step-only', step: 'Set up source-pinned native runtime', compiled: [] }];
+  const verdict = classifyJobFailure({ job: failedSetupJob, log: aptMirrorLog, entries });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.match(verdict.reason, /carries no registered environment error/);
+});
+
 test('a failing lint or typecheck step is not infrastructure, though no test ran', () => {
   const checkJob = {
     name: 'check',
