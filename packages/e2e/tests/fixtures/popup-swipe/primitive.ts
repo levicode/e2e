@@ -2,6 +2,7 @@
 export function primitiveFixtureDocument(path: string): string {
   return `<!doctype html><title>Fixture ${path}</title><script>
   globalThis.fixtureAtFirstScript = globalThis.fixtureInit?.marker ?? '';
+  globalThis.fixtureAtFirstScriptRuns = globalThis.fixtureInitRuns ?? 0;
   (() => {
     const kind = ${JSON.stringify(path === '/popup' ? 'popup' : path === '/frame' ? 'frame' : 'main')};
     const send = phase => {
@@ -17,6 +18,20 @@ export function primitiveFixtureDocument(path: string): string {
       addEventListener('DOMContentLoaded', loaded, { once: true, passive: true });
       addEventListener('pagehide', dispose, { once: true, passive: true });
     } catch { dispose(); }
+    // A popup reports its own first-document boot. The opener uses that signal
+    // only to reload into the guaranteed post-registration document; a shared
+    // browser's first document is best effort (#153), so no assertion reads
+    // this message.
+    if (kind === 'popup') {
+      try {
+        addEventListener('load', () => {
+          try {
+            if (opener) opener.postMessage({ kind: 'fixture-boot', path: location.pathname,
+              marker: globalThis.fixtureAtFirstScript, runs: globalThis.fixtureAtFirstScriptRuns }, location.origin);
+          } catch { /* The opener may already be gone. */ }
+        }, { once: true });
+      } catch { /* A document that cannot report boot still loads. */ }
+    }
   })();
   globalThis.fixtureKeys = []; globalThis.fixturePointer = [];
   sessionStorage.setItem('loads', String(Number(sessionStorage.getItem('loads') ?? 0) + 1));

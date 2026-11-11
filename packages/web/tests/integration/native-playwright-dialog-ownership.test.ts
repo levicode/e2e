@@ -138,7 +138,7 @@ it('documents the shared-browser limitation for a popup first document created b
     await browser.onDialog(async dialog => { await dialog.accept('owned answer'); });
     const popupReady = live.context().waitForEvent('page', { timeout: 5000 });
     // The Playwright client creates and starts this popup itself. Native cannot
-    // guarantee dialog ownership for that first document (documented limitation):
+    // guarantee dialog ownership for that first document (the #153 limitation):
     // both outcomes are contract-consistent, and a later document keeps the
     // guarantee (see the navigation case above).
     await rootPage.evaluate(popupUrl => { window.open(popupUrl); }, new URL('/popup', url).href);
@@ -150,7 +150,7 @@ it('documents the shared-browser limitation for a popup first document created b
       observed = answer === 'owned answer' ? 'native-owned' : 'limitation';
     } catch { observed = 'limitation'; }
     facts['externalClientFirstPopup'] = observed;
-    expect(['native-owned', 'limitation']).toContain(observed);
+    expect(['native-owned', 'limitation'], 'CONTRACT (#153): a popup first document created and started by another CDP client is best effort for dialog ownership; either native ownership or the documented limitation is accepted, and a later document keeps the guarantee.').toContain(observed);
   });
 }, 95000);
 
@@ -182,7 +182,7 @@ it('keeps native decisions for script-created popups and an isolated replacement
     // dialog decision is guaranteed.
     await popup.goto(new URL('/popup', url).href);
     await popup.waitForLoadState('load', { timeout: 5000 });
-    expect(await popup.evaluate(() => (globalThis as typeof globalThis & { answer?: string | null }).answer)).toBe('owned answer');
+    expect(await popup.evaluate(() => (globalThis as typeof globalThis & { answer?: string | null }).answer), 'CONTRACT (#153): this explicit navigation creates the popup document after attach, so native dialog ownership is guaranteed for it; only the popup first document is best effort.').toBe('owned answer');
     expect(live.page()).toBe(rootPage);
     facts['popupNativeAnswer'] = true;
     await engine.session!.reset!(operation());

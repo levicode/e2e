@@ -38,9 +38,9 @@ const boardLedger = `<script>(() => {
   } catch { dispose(); }
 })();</script>`;
 
-// CONTRACT: a popup's first document is best effort in a browser shared with
-// another CDP client; the fixture retries through a reload and asserts the
-// document created after registration.
+// CONTRACT (#153): a popup's first document is best effort in a browser shared
+// with another CDP client and is only observed; the fixture waits for its own
+// boot signal, reloads, and asserts the document created after registration.
 describe('same-fixture borrowed popup and path-swipe diagnostic pair', () => {
   let server: Server | undefined;
   let project: FixtureProject | undefined;
@@ -144,6 +144,8 @@ describe('same-fixture borrowed popup and path-swipe diagnostic pair', () => {
   });
   it.each(titles)('%s', title => {
     const result = resultByTitle(outcome, title);
-    expect(result.status, JSON.stringify({ facts, dragFacts, rejected, errors: outcome.report.run.errors, attempts: result.attempts })).toBe('passed');
+    // The fixture observes a shared popup's best-effort first document (#153)
+    // and asserts the reloaded, engine-started document instead.
+    expect(result.status, `CONTRACT (#153): a shared popup's first document is best effort; the reloaded document must pass. ${JSON.stringify({ facts, dragFacts, rejected, errors: outcome.report.run.errors, attempts: result.attempts })}`).toBe('passed');
   });
 });

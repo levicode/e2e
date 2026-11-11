@@ -15,10 +15,11 @@ const titles = [
   'popup navigation it started itself keeps the guaranteed document boundary',
   'blank popup has each init once before explicit first navigation',
 ];
-// CONTRACT: a browser shared with another CDP client lets that client release a
-// popup's start pause before native registers init scripts. The popup's first
-// document is best effort; the fixtures assert the guaranteed document created
-// after registration (reload or explicit navigation).
+// CONTRACT (#153): a browser shared with another CDP client lets that client
+// release a popup's start pause before native registers init scripts. A popup's
+// first document is best effort and is only observed; the fixture asserts the
+// engine-started document instead (a reload, the popup's own navigation, or an
+// explicit navigation), and each such document keeps the full guarantee.
 describe('popup initialization document boundary controls', () => {
   let server: Server | undefined;
   let chrome: RemoteChrome | undefined;
@@ -64,6 +65,9 @@ describe('popup initialization document boundary controls', () => {
   });
   it.each(titles)('%s', title => {
     const result = resultByTitle(outcome, title);
-    expect(result.status, JSON.stringify(result.attempts)).toBe('passed');
+    // The fixture's own assertions distinguish the documented #153 limitation
+    // (best-effort popup first document, observed only) from engine-started
+    // documents, which must pass at full strength.
+    expect(result.status, `CONTRACT (#153): a shared popup's first document is best effort; every engine-started document must pass. ${JSON.stringify(result.attempts)}`).toBe('passed');
   });
 });
