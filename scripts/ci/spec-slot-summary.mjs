@@ -137,7 +137,9 @@ export function readSummaries(dir) {
       if (!entry.endsWith('.json')) continue;
       try {
         const value = JSON.parse(readFileSync(file, 'utf8'));
-        if (value !== null && typeof value === 'object' && typeof value.slot === 'string') summaries.push(value);
+        // The retry audit file beside a summary also carries a slot; only the
+        // summary itself has a status, so the gate reads one row per slot.
+        if (value !== null && typeof value === 'object' && typeof value.slot === 'string' && typeof value.status === 'string') summaries.push(value);
       } catch { /* A malformed summary cannot hide the other slots; the gate verdict is separate. */ }
     }
   };
@@ -210,23 +212,52 @@ export function render(summaries, needs, annotations = {}) {
   const rows = ['| slot | status | failed tests |', '| --- | --- | --- |'];
   for (const summary of summaries) {
     const named = annotations[summary.slot];
-    const parts = Array.isArray(named) && named.length > 0
+    // A green slot has no failed tests to show, even when its first attempt
+    // failed and the known-flake retry below turned it green.
+    const parts = summary.status === 'success' ? [] : Array.isArray(named) && named.length > 0
       ? named.map(({ test, reason }) => `\`${cell(test)}\`${reason === undefined ? '' : ` (${cell(reason)})`}`)
       : summary.failures.map(({ test, reason }) => `\`${cell(test)}\`${reason === undefined ? '' : ` (${cell(reason)})`}`);
     // A failure annotation already names the case; only a slot without one
     // falls back to the log text, which can also quote a child run.
-    if (!Array.isArray(named) || named.length === 0) for (const error of summary.errors) parts.push(`error: ${cell(error)}`);
+    if (summary.status !== 'success' && (!Array.isArray(named) || named.length === 0)) for (const error of summary.errors) parts.push(`error: ${cell(error)}`);
     const failed = parts.length === 0
       ? (summary.status === 'success' ? '—' : 'no failure line in the log')
       : parts.join('<br>');
-    rows.push(`| ${summary.slot} | ${summary.status}${summary.testReached ? '' : ' (tests did not start)'} | ${failed} |`);
+    const retried = summary.retried === true ? ' (retried)' : '';
+    rows.push(`| ${summary.slot} | ${summary.status}${retried}${summary.testReached ? '' : ' (tests did not start)'} | ${failed} |`);
   }
   const test = needs?.test?.result;
   const missing = test !== undefined && test !== 'success' && test !== 'skipped' && summaries.every(summary => summary.status !== 'failure');
   if (summaries.length === 0) rows.push('| — | — | no per-slot summary was uploaded |');
   const lines = [...rows];
+  const audit = flakeRetryAudit(summaries);
+  if (audit.length > 0) lines.push('', '### Known-flake retry audit', '', ...audit);
   if (missing) lines.push('', '::warning::The test job failed but no slot summary reports a failure; the job stopped before the tests wrote one.');
   return lines.join('\n');
+}
+
+/** One row per slot the bounded flake retry considered: who retried, on what, and the result. */
+function flakeRetryAudit(summaries) {
+  const rows = [];
+  for (const summary of summaries) {
+    const retry = summary.flakeRetry;
+    if (retry === undefined || retry === null) continue;
+    const signatures = Array.isArray(retry.retriedSignatures) && retry.retriedSignatures.length > 0
+      ? retry.retriedSignatures
+      : Array.isArray(retry.signatures) ? retry.signatures : [];
+    const signatureParts = signatures.map(id => `\`${cell(id)}\``);
+    for (const unlisted of Array.isArray(retry.unlisted) ? retry.unlisted : []) {
+      signatureParts.push(`\`${cell(unlisted.test)}\` (${cell(unlisted.reason ?? 'unlisted')})`);
+    }
+    const signaturesCell = signatureParts.length === 0 ? '—' : signatureParts.join('<br>');
+    const historyNote = retry.history?.status === 'deterministic' ? `, previous run ${retry.history.run}` : '';
+    const result = retry.attempted
+      ? (retry.exitCode === 0 ? 'passed' : `failed (exit ${retry.exitCode ?? 'unknown'})`)
+      : `not retried: ${cell(retry.reason ?? 'unlisted')}${historyNote}`;
+    rows.push(`| ${summary.slot} | ${retry.attempted ? 'yes' : 'no'} | ${signaturesCell} | ${result} |`);
+  }
+  if (rows.length === 0) return [];
+  return ['| slot | retried | signature | result |', '| --- | --- | --- | --- |', ...rows];
 }
 
 async function main(argv) {

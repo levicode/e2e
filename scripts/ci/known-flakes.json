@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-11",
+  "policy": "docs/flake-policy.mdx",
+  "evidenceWindow": {
+    "from": "2026-11-10T13:00:00Z",
+    "to": "2026-11-11T04:50:00Z",
+    "completedSpecRuns": 19,
+    "slotExecutions": 95,
+    "note": "Committed runs of the spec workflow. One slot execution is one test (<node>) job of one run."
+  },
+  "entries": [
+    {
+      "id": "native-scope-unavailable",
+      "kind": "test-signature",
+      "retryable": true,
+      "scope": "spec-test-slot",
+      "signature": "EngineError: The native browser operation failed (scope-unavailable) - code INVALID_STATE, directly or as the APP_NOT_OPEN assertion the popup tests report when the native scope is gone",
+      "source": "packages/web/src/native/browser-channel.ts:315 (classifyResultError)",
+      "patterns": [
+        "(?:^|\\n)\\s*(?:EngineError|TestError): The native browser operation failed \\(scope-unavailable\\)|\"message\":\"The native browser operation failed \\(scope-unavailable\\)\""
+      ],
+      "evidence": {
+        "slotExecutions": 12,
+        "runs": [
+          {
+            "run": 42957097387,
+            "head": "be30aa0de",
+            "slot": "24",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > bounds a hung reconnect resolver and propagates cancellation to it"
+          },
+          {
+            "run": 42957099225,
+            "head": "be30aa0de",
+            "slot": "22.22.3",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > shares recovery between concurrent operations while a cancelled waiter dispatches nothing"
+          },
+          {
+            "run": 42860703911,
+            "head": "6c2540aa5",
+            "slot": "24.8.0",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > rejects a different browser and never falls back to the provisioning resolver"
+          },
+          {
+            "run": 42854954011,
+            "head": "6c2540aa5",
+            "slot": "24",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > bounds a hung reconnect resolver and propagates cancellation to it"
+          },
+          {
+            "run": 42854690738,
+            "head": "6c2540aa5",
+            "slot": "22",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > bounds a hung reconnect resolver and propagates cancellation to it"
+          },
+          {
+            "run": 42854675908,
+            "head": "6c2540aa5",
+            "slot": "24",
+            "test": "tests/integration/closed-shadow.test.ts > refuses unprovable closed-root masks without publishing pixels, restores author state, and succeeds after the author constraint is removed",
+            "detail": "TestError: The native browser operation failed (scope-unavailable)"
+          },
+          {
+            "run": 42853346836,
+            "head": "675cd1942",
+            "slot": "24.8.0",
+            "test": "tests/integration/routes.test.ts > browser.route decisions > continue to a wrapped scheme aborts the request and fails the next step"
+          },
+          {
+            "run": 42846773957,
+            "head": "7f7e19591",
+            "slot": "26",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > shares recovery between concurrent operations while a cancelled waiter dispatches nothing"
+          },
+          {
+            "run": 42821257516,
+            "head": "07c65c2db",
+            "slot": "22",
+            "test": "tests/integration/cdp-recovery.test.ts > CDP session recovery > rejects a different browser and never falls back to the provisioning resolver"
+          },
+          {
+            "run": 42854663289,
+            "head": "6c2540aa5",
+            "slot": "22",
+            "test": "tests/integration/web-popup-init-order.test.ts > popup initialization document boundary controls > blank popup has each init once before explicit first navigation",
+            "detail": "AssertionError carrying \"message\":\"The native browser operation failed (scope-unavailable)\""
+          },
+          {
+            "run": 42842171625,
+            "head": "aa20b94fb",
+            "slot": "22",
+            "test": "tests/integration/web-popup-init-order.test.ts > popup initialization document boundary controls > blank popup has each init once before explicit first navigation",
+            "detail": "AssertionError carrying \"message\":\"The native browser operation failed (scope-unavailable)\""
+          },
+          {
+            "run": 42973279306,
+            "head": "af02a862c",
+            "slot": "24",
+            "test": "tests/integration/web-popup-init-order.test.ts > popup initialization document boundary controls > blank popup has each init once before explicit first navigation",
+            "detail": "APP_NOT_OPEN inside the retried assertion, message \"The native browser operation failed (scope-unavailable)\""
+          }
+        ],
+        "notAProductDefect": "In the runs where the rest of the matrix executed, the same test file passes in the sibling slots: in 42957099225, slots 22, 24, 24.8.0 and 26 all pass cdp-recovery.test.ts while 22.22.3 fails it. Twelve runs on seven different heads hit the signature in five matrix slots across four test files; the wrapped form (an APP_NOT_OPEN assertion carrying the same message) is the same native refusal, not an init-order or popup assertion about product behavior. The runner classifies a settled clean refusal: effects not-dispatched and scope usable, so nothing was dispatched twice and no page state was published from it. Each matrix slot gets its own 4-vCPU runner and runs three browser workers plus their app processes; a native scope going unavailable under that per-slot starvation is a transport-contention shape, not a single-user product path. It is not reproducible outside the matrix load."
+      }
+    },
+    {
+      "id": "attempt-timed-out",
+      "kind": "test-signature",
+      "retryable": true,
+      "scope": "spec-test-slot",
+      "signature": "AssertionError on an attempt with status timed-out and code TEST_TIMEOUT, about 17.5 s",
+      "source": "packages/e2e/src/run/execute.ts (the test-phase watchdog aborts a still-running attempt)",
+      "patterns": [
+        "\"status\":\"timed-out\"",
+        "expected 'timed-out' to be 'passed'"
+      ],
+      "evidence": {
+        "slotExecutions": 2,
+        "runs": [
+          {
+            "run": 42957097387,
+            "head": "be30aa0de",
+            "slot": "24.8.0",
+            "test": "tests/integration/web-native-primitives-contract.test.ts > public native Web primitive contract > init scripts and partial media updates cover frames and new tabs",
+            "detail": "attempt status timed-out, durationMs 17519; browser.evaluate cancelled after 11689 ms when the 12000 ms test watchdog fired"
+          },
+          {
+            "run": 42854663289,
+            "head": "6c2540aa5",
+            "slot": "22.22.3",
+            "test": "tests/integration/web-native-primitives-contract.test.ts > public native Web primitive contract > init scripts and partial media updates cover frames and new tabs"
+          }
+        ],
+        "notAProductDefect": "The attempt reports status timed-out, not an assertion or engine error: its steps passed one by one and one browser.evaluate hung until the 12 s test watchdog cancelled it at 11.7 s. The same test passes in the four sibling slots of 42957097387 (22, 22.22.3, 24 and 26) that ran web-native-primitives-contract.test.ts with the same build, so the code path is not failing deterministically. It is a wall-clock starvation shape on a loaded matrix runner; the product path does not run 15 browser workers on four cores."
+      }
+    },
+    {
+      "id": "source-core-macos-runner-capacity",
+      "kind": "infrastructure",
+      "retryable": false,
+      "scope": "integration-core-job",
+      "signature": "source_core (macos-15) cancelled after 15m02s: The job was not acquired by Runner of type hosted even after multiple attempts",
+      "evidence": {
+        "runs": [
+          {
+            "run": 42870695704,
+            "job": "source_core (macos-15)",
+            "startedAt": "2026-11-10T18:14:51Z",
+            "cancelledAt": "2026-11-10T18:29:53Z",
+            "annotation": "The job was not acquired by Runner of type hosted even after multiple attempts"
+          },
+          {
+            "run": 42870588803,
+            "job": "source_core (macos-15)",
+            "note": "same cancellation shape"
+          }
+        ],
+        "notAProductDefect": "The job never reached checkout or tests; GitHub cancelled it while waiting for a hosted macOS arm64 runner and its annotation says the runner was never acquired. The ubuntu-24.04 twin of the same run passed. Nothing in the repository ran, so no repository state is implicated."
+      },
+      "automatedRetry": "None in this mechanism: a slot that never started has no failed test file to rerun, and integration-core is not one of the jobs spec gate requires. Rerun the workflow when runner capacity is available; the cancellation is audited by the run record."
+    }
+  ],
+  "excluded": [
+    {
+      "id": "native-cleanup-could-not-be-proven",
+      "signature": "EngineError: The native browser cleanup could not be proven",
+      "lastObserved": "2026-11-10T16:28:00Z",
+      "reason": "Observed 84 times in five broken-branch runs before #174 (upstream cleanup leak) and #176 (download release retirement) merged. Zero occurrences in the five completed runs from 2026-11-10T17:59Z through 2026-11-11T04:50Z. Not listed: if it reappears, the slot stays red and is a defect to fix, not a flake to retry."
+    },
+    {
+      "id": "native-cleanup-failed-unknown-effects",
+      "signature": "EngineError: The native browser action outcome is unknown (native cleanup-failed; effects unknown; scope quarantined)",
+      "lastObserved": "2026-11-11T05:09:00Z",
+      "reason": "Observed once, run 42961203815 slot 24 (cdp-recovery.test.ts). Not listed: the action outcome is unknown and the scope was quarantined, so the shape is closer to a defect than a retryable flake, and one observation cannot establish the recurrence the registration rule requires. If it recurs, it is a defect to ticket."
+    }
+  ]
+}

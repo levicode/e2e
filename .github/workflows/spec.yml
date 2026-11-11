@@ -86,6 +86,7 @@ jobs:
           pnpm exec tsc -p .dev/skills/babysit/scripts
           node --test .dev/skills/babysit/scripts/pr-status.test.ts
           node --test scripts/ci/spec-slot-summary.test.mjs
+          node --test scripts/ci/flake-retry.test.mjs
           node --test scripts/ci/bind-popup-evidence.test.mjs
           node --test scripts/setup-source-native.test.mjs
       - name: Set up source-pinned native runtime
@@ -107,7 +108,16 @@ jobs:
   test:
     needs: native-runtime
     runs-on: ${{ github.repository == 'tester-army/e2e' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    # The bounded known-flake retry reruns a slot's failed files after its
+    # first attempt; the timeout covers both.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # Read the previous run's slot job and its failure annotations at the
+      # same head, which is what turns a second consecutive listed failure
+      # deterministic. Check-run annotations need checks: read.
+      actions: read
+      checks: read
     strategy:
       fail-fast: false
       matrix:
@@ -241,6 +251,10 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
           FIXTURES
       - name: Unit and integration tests
+        id: tests
+        # The bounded retry below may rerun this slot's failed files once; the
+        # verdict step owns the job result, so this red mark stays visible.
+        continue-on-error: true
         env:
           E2E_UNSERVED_MODEL_CAPTURE: '1'
           E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
@@ -281,9 +295,55 @@ jobs:
             --slot "${{ matrix.node }}" \
             --log "$RUNNER_TEMP/spec-test-${{ matrix.node }}.log" \
             --exit-file "$RUNNER_TEMP/spec-test-${{ matrix.node }}.exit" \
-            --job-status "${{ job.status }}" \
+            --job-status "${{ steps.tests.outcome }}" \
             --node-version "$(node --version)" \
             --output "$RUNNER_TEMP/spec-slot-${{ matrix.node }}.json"
+      # One bounded retry for a listed signature only (docs/flake-policy.mdx,
+      # scripts/ci/known-flakes.json). A failure outside the list, or a second
+      # consecutive listed failure in this slot at this head, is not retried.
+      - name: Bounded known-flake retry
+        if: ${{ steps.tests.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          E2E_UNSERVED_MODEL_CAPTURE: '1'
+          E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
+          E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
+          E2E_PLATFORM_HANDLER_DIAGNOSTIC: '1'
+          NODE_SELECTOR: ${{ matrix.node }}
+          PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
+          PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
+          FAULT_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.fault-manifest-sha256 }}
+          FAULT_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.fault-run-attempt }}
+        run: |
+          set -euo pipefail
+          echo "::notice::Known-flake policy: docs/flake-policy.mdx; the list is scripts/ci/known-flakes.json"
+          export PRODUCTION_RUNTIME_DIR="$RUNNER_TEMP/ci-native-runtime"
+          export FAULT_RUNTIME_DIR="$RUNNER_TEMP/ci-native-fault-runtime"
+          export RETRY_EVIDENCE_DIR="$E2E_SPEC_EVIDENCE_DIR/runtime-retry"
+          export E2E_CAPTURE_SOURCE_COMMIT="$GITHUB_SHA"
+          export E2E_CAPTURE_SOURCE_TREE="$(git rev-parse HEAD^{tree})"
+          node scripts/ci/flake-retry.mjs retry \
+            --slot "${{ matrix.node }}" \
+            --summary "$RUNNER_TEMP/spec-slot-${{ matrix.node }}.json" \
+            --log "$RUNNER_TEMP/spec-test-${{ matrix.node }}.log" \
+            --whitelist scripts/ci/known-flakes.json \
+            --output "$RUNNER_TEMP/spec-retry-${{ matrix.node }}.json" \
+            --retry-log "$RUNNER_TEMP/spec-retry-${{ matrix.node }}.log" \
+            --repo "$GITHUB_REPOSITORY" \
+            --run "$GITHUB_RUN_ID"
+      # The slot's verdict is its summary status after the retry, not the red
+      # mark of the first attempt. A retry that passed makes the slot success;
+      # anything else fails the job, and the gate fails with it.
+      - name: Require the slot verdict
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/spec-slot-${{ matrix.node }}.json"
+          status="$(node -e 'try { process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).status) } catch { process.stdout.write("missing") }' "$file")"
+          if [ "$status" != "success" ]; then
+            echo "::error::spec slot ${{ matrix.node }} ended $status; see the per-slot summary and the known-flake retry audit"
+            exit 1
+          fi
       - name: Retain the per-slot test summary
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -291,7 +351,10 @@ jobs:
           name: spec-slot-${{ matrix.node }}
           if-no-files-found: warn
           retention-days: 7
-          path: ${{ runner.temp }}/spec-slot-${{ matrix.node }}.json
+          path: |
+            ${{ runner.temp }}/spec-slot-${{ matrix.node }}.json
+            ${{ runner.temp }}/spec-retry-${{ matrix.node }}.json
+            ${{ runner.temp }}/spec-retry-${{ matrix.node }}.log
       # Bind the opt-in popup evidence to this exact run, attempt, matrix slot
       # and installed Chromium. The evidence bytes are untouched; the digest
       # and identity live beside them in binding.json.

@@ -1,0 +1,59 @@
+---
+title: Flake policy
+sidebarTitle: Flake policy
+description: How this repository separates deterministic failures from known flakes, and the one bounded retry the spec gate allows.
+icon: "shield-check"
+"og:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=b443dcb9a4"
+"twitter:image": "https://e2e.tester.army/docs/images/og/flake-policy.png?v=b443dcb9a4"
+---
+
+This page is about this repository's own `spec` workflow, not about running e2e in your CI. A red `spec gate` must mean the change is broken, or that a listed flake failed its one retry. The matrix also runs five Node slots on a shared runner, and that load exposes a small set of failures that are not defects in the change. This page defines both kinds, lists the known flakes with their evidence, and states the only retry the gate performs.
+
+## Two kinds of failure
+
+| Kind | When it is this | What happens |
+| --- | --- | --- |
+| Deterministic failure | It repeats on the same head with the same shape, and the shape names a code or config cause. | Fix it. It is never listed and never retried. |
+| Known flake | It appears only in the multi-slot matrix, does not reproduce on its own, its shape is resource or timing contention, and its evidence shows it is unrelated to product semantics. | Listed in `scripts/ci/known-flakes.json`; the slot gets one retry. |
+
+A failure that is not in the list stays red, even when it looks like one of the known shapes. That is the point: the list is a closed set, not a pattern for "probably flaky".
+
+## The known flakes
+
+Each entry carries the runs it was observed in, the failing test and matrix slot, and why it is not a product defect. The JSON file is the source of truth the retry reads; this table is its readable copy.
+
+| id | Signature | Observed | Why it is not a product defect |
+| --- | --- | --- | --- |
+| `native-scope-unavailable` | `EngineError: The native browser operation failed (scope-unavailable)` (`INVALID_STATE`), from `classifyResultError` in `packages/web/src/native/browser-channel.ts`, directly or as the `APP_NOT_OPEN` assertion some popup tests report when the scope is gone | 12 slot-executions in 12 completed runs between 2026-11-10T13:00Z and 2026-11-11T07:00Z, including `42957097387` slot 24, `42957099225` slot 22.22.3, and `42973279306` slot 24 (the wrapped form) | In `42957099225` slots 22, 24, 24.8.0 and 26 pass `cdp-recovery.test.ts` while 22.22.3 fails it, and twelve runs on seven heads hit it in five slots across four test files; the wrapped form carries the same native refusal, not an init-order assertion. The refusal is settled: effects `not-dispatched`, scope `usable`. Each slot runs on its own 4-vCPU runner with three browser workers plus their app processes; that per-slot starvation is transport contention, not a single-user product path. |
+| `attempt-timed-out` | `AssertionError` on an attempt whose status is `timed-out` (`TEST_TIMEOUT`, about 17.5 s) | 2 slot-executions, `42957097387` slot 24.8.0 (`durationMs` 17519) and `42854663289` slot 22.22.3 | An attempt step hung and the 12 s test watchdog cancelled it; the same test passes in the four sibling slots that ran it with the same build. No assertion or engine error was reported. |
+| `source-core-macos-runner-capacity` (infrastructure, no automated retry) | `source_core (macos-15)` cancelled after 15m02s; annotation: `The job was not acquired by Runner of type hosted even after multiple attempts` | `42870695704`, `42870588803` | The job never reached checkout or tests; GitHub never acquired a hosted macOS arm64 runner, and the ubuntu twin of the same run passed. Nothing in the repository ran. |
+
+### Not listed
+
+`EngineError: The native browser cleanup could not be proven` was observed 84 times in five runs before #174 and #176 merged. It has appeared zero times in the five completed runs from 2026-11-10T17:59Z through 2026-11-11T04:50Z, so it is not in the list and is not retried. If it returns, it is a defect to fix, not a flake to hide.
+
+A different cleanup shape appeared once, in run `42961203815` slot 24: `EngineError: The native browser action outcome is unknown (native cleanup-failed; effects unknown; scope quarantined)`. It is not listed either: the outcome is unknown, the scope was quarantined, and one observation cannot establish the recurrence the registration rule requires. If it recurs, it is a defect to ticket.
+
+`source_core` is the one infrastructure entry. It cannot use the test retry: a job that was never acquired has no failed test file, and `source_core` is not in `spec gate`. Rerun the workflow once capacity is available; the cancellation stays in the run record.
+
+## The retry
+
+A failed slot may be retried once, under all of these conditions:
+
+- Every failed test file in the slot has a failure block that matches a listed signature. One unlisted failure cancels the retry.
+- The log's own failed-test and failed-file totals match the failing tests the summary names. A file that failed to collect has no `FAIL ...test.ts` line, so a mismatch cancels the retry.
+- The slot did not already end red with a listed signature on the previous completed run at the same head. That second consecutive failure is deterministic: the gate stays red and the failure gets a ticket.
+- The retry reruns the failed test files and the root `test` chain's commands after the web package, through the same pinned-native fixture wrapper as the first attempt. The first attempt is an `&&` chain: a failure in e2e or web stops it, so the later packages never ran, and a retry of the failed file alone would hide them.
+
+A passed retry makes the slot green. A failed retry leaves it red, and so does an unlisted signature. `spec gate` prints one audit table with the slot that retried, the signature the first attempt failed on, and the retry result; the same details live in the slot artifact (`spec-retry-<node>.json` and its log). No retry is silent.
+
+The retry never runs for a slot that never started, for a collection error with no failed test file or one the log's totals cannot account for, or when the previous completed run at the same head left that slot red under a listed signature.
+
+## Register a new flake
+
+1. Collect the evidence: the run id and matrix slot, the exact failure block, the test, how often it appeared, and the proof that it is not a product defect. A single observation is not enough; the same signature must have recurred across runs or heads.
+2. Add the entry to `scripts/ci/known-flakes.json`: a stable `id`, the smallest regex that matches the observed failure block, and the evidence object. Patterns are anchored to the failure text; do not use a bare word that a product assertion could quote.
+3. Open a pull request and update this page's table in the same change.
+4. Review the list in the pull request that follows a release or a CI change. Remove an entry whose signature stopped appearing or was fixed; add every new signature with its evidence.
+
+A deterministic failure is fixed or tracked with its own issue. It never becomes a listed flake.

@@ -133,3 +133,53 @@ test('collect and report compose over one artifact directory per slot', () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('the gate prints who retried, on which signature, and what the retry did', () => {
+  const markdown = render([
+    {
+      slot: '24', node: 'v24', status: 'success', retried: true, jobStatus: 'success', exitCode: 0, testReached: true,
+      failures: [], errors: [],
+      flakeRetry: { attempted: true, reason: 'all failures match the known-flake list', signatures: ['native-scope-unavailable'], retriedSignatures: ['native-scope-unavailable'], exitCode: 0, durationMs: 1200 },
+    },
+    {
+      slot: '24.8.0', node: 'v24.8.0', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true,
+      failures: [{ test: 'integration  tests/integration/new.test.ts > new case' }], errors: [],
+      flakeRetry: { attempted: false, reason: 'a failure is not in the known-flake list', signatures: [], unlisted: [{ test: 'integration  tests/integration/new.test.ts > new case', reason: 'AssertionError: expected 1 to be 2' }] },
+    },
+    {
+      slot: '22', node: 'v22', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true,
+      failures: [{ test: 'integration  tests/integration/cdp-recovery.test.ts > CDP session recovery > bounds a hung reconnect resolver' }], errors: [],
+      flakeRetry: { attempted: false, reason: 'the previous run at this head ended red in this slot with a listed signature', signatures: ['native-scope-unavailable'], history: { status: 'deterministic', run: 42957097387 } },
+    },
+  ], { test: { result: 'success' } });
+  assert.match(markdown, /\| 24 \| success \(retried\) \| — \|/);
+  assert.match(markdown, /### Known-flake retry audit/);
+  assert.match(markdown, /\| 24 \| yes \| `native-scope-unavailable` \| passed \|/);
+  assert.match(markdown, /not retried: a failure is not in the known-flake list/);
+  assert.match(markdown, /\(AssertionError: expected 1 to be 2\)/);
+  assert.match(markdown, /not retried: the previous run at this head ended red in this slot with a listed signature, previous run 42957097387/);
+});
+
+test('a green slot with a retry shows no failed tests beside it', () => {
+  const markdown = render([{
+    slot: '26', node: 'v26', status: 'success', retried: true, jobStatus: 'success', exitCode: 0, testReached: true,
+    failures: [{ test: 'log text that should not appear' }], errors: [],
+    flakeRetry: { attempted: true, signatures: ['attempt-timed-out'], retriedSignatures: ['attempt-timed-out'], exitCode: 0 },
+  }], { test: { result: 'success' } }, { 26: [{ test: 'annotation that should not appear' }] });
+  assert.doesNotMatch(markdown, /log text that should not appear/);
+  assert.doesNotMatch(markdown, /annotation that should not appear/);
+  assert.match(markdown, /\| 26 \| success \(retried\) \| — \|/);
+});
+
+test('the retry audit file beside a summary is not read as a second slot', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'spec-slot-summary-'));
+  try {
+    writeFileSync(path.join(directory, 'spec-slot-24.json'), JSON.stringify({ slot: '24', status: 'success', failures: [], errors: [], flakeRetry: { attempted: true, exitCode: 0 } }));
+    writeFileSync(path.join(directory, 'spec-retry-24.json'), JSON.stringify({ schemaVersion: 1, slot: '24', attempted: true }));
+    const summaries = readSummaries(directory);
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].status, 'success');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
