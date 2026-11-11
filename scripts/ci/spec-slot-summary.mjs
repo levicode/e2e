@@ -190,6 +190,11 @@ export function classifyJobFailure({ job, log, entries }) {
   const steps = Array.isArray(job.steps) ? job.steps : [];
   const test = steps.find(step => step !== null && typeof step === 'object' && step.name === testStep);
   if (test?.conclusion === 'failure') return { kind: 'test', testsExecuted: true, step: testStep, reason: 'the test step failed' };
+  if (test?.conclusion === 'cancelled') {
+    // The step started and was interrupted (the 45-minute timeout, a cancelled
+    // run). Tests ran, but their outcome is unknown, so it is neither kind.
+    return { kind: 'unclassified', testsExecuted: true, outcome: 'unknown', step: testStep, reason: 'the test step was cancelled before it finished' };
+  }
   if (test?.conclusion === 'success') {
     // Tests ran and passed; the job fell over in a later step. That is not a
     // test failure and not this class, so it is reported as unclassified.
@@ -318,7 +323,10 @@ export async function fetchAnnotations({ repo, run, token, fetchImpl = fetch }) 
 function kindLabel(verdict) {
   if (verdict.kind === 'infrastructure') return 'infrastructure (tests did not execute)';
   if (verdict.kind === 'test') return 'test';
-  return verdict.testsExecuted ? 'unclassified (tests executed; no test failed)' : 'unclassified (tests did not execute)';
+  if (verdict.testsExecuted !== true) return 'unclassified (tests did not execute)';
+  return verdict.outcome === 'unknown'
+    ? 'unclassified (tests executed; outcome unknown)'
+    : 'unclassified (tests executed; no test failed)';
 }
 
 /** The failure kind cell: what the gate can prove about this slot's failure. */

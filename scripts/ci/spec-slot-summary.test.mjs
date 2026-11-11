@@ -246,6 +246,28 @@ test('a failed test step is a test failure even when the log quotes the same env
   assert.equal(verdict.step, 'Unit and integration tests');
 });
 
+test('a cancelled test step is unclassified with the outcome unknown, not "tests did not execute"', () => {
+  const job = {
+    name: 'test (26)',
+    conclusion: 'cancelled',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'cancelled' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.outcome, 'unknown');
+  assert.equal(verdict.step, 'Unit and integration tests');
+  const markdown = render(
+    [{ slot: '26', status: 'cancelled', jobStatus: 'cancelled', exitCode: null, testReached: false, failures: [], errors: [] }],
+    { test: { result: 'cancelled' } }, {}, { 'test (26)': verdict },
+  );
+  assert.match(markdown, /unclassified \(tests executed; outcome unknown\)/);
+  assert.doesNotMatch(markdown, /tests did not execute/);
+});
+
 test('a job whose tests passed but a later step failed is not a test failure', () => {
   const job = {
     name: 'test (24)',
