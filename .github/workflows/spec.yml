@@ -250,6 +250,8 @@ jobs:
           }, null, 2), { flag: 'wx', mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
           FIXTURES
+      - name: Prepare bounded native settlement capture
+        run: mkdir -p "$GITHUB_WORKSPACE/.e2e/native-capture"
       - name: Unit and integration tests
         id: tests
         # The bounded retry below may rerun this slot's failed files once; the
@@ -259,6 +261,15 @@ jobs:
           E2E_UNSERVED_MODEL_CAPTURE: '1'
           E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
           E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
+          # A wait whose deadline falls between two polls ends with a
+          # one-millisecond native query. Its closed receipt names the exact
+          # settlement: local cancel, native code, effects and scope state.
+          E2E_SHORT_READ_DIAGNOSTIC: '1'
+          # Bounded settlement capture for the two unlisted write-side
+          # signatures on this pin: scalars and the failing stage only, no
+          # page content. The native recorder caps each process's records.
+          AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/cleanup.jsonl
+          AGENT_BROWSER_QUERY_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/query.jsonl
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
@@ -309,6 +320,12 @@ jobs:
           E2E_LIFECYCLE_OPEN_CANCEL_CAPTURE: '1'
           E2E_ENGINE_SECRET_SUITE_CAPTURE: '1'
           E2E_PLATFORM_HANDLER_DIAGNOSTIC: '1'
+          E2E_SHORT_READ_DIAGNOSTIC: '1'
+          # Bounded settlement capture for the two unlisted write-side
+          # signatures on this pin: scalars and the failing stage only, no
+          # page content. The native recorder caps each process's records.
+          AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/cleanup.jsonl
+          AGENT_BROWSER_QUERY_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/query.jsonl
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
@@ -388,6 +405,7 @@ jobs:
           retention-days: 7
           path: |
             ${{ env.E2E_SPEC_EVIDENCE_DIR || format('{0}/spec-fixtures-not-created', runner.temp) }}
+            .e2e/native-capture
             packages/e2e/.e2e/popup-init-order-borrowed
             packages/e2e/.e2e/popup-init-order/runner/popup-document-evidence.json
             packages/e2e/.e2e/popup-init-order/runner/binding.json
