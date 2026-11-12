@@ -117,6 +117,17 @@ describe('first lifecycle failure provenance', () => {
     });
   });
 
+  it('names an unproven native cleanup, which otherwise leaves only the code and phase', () => {
+    const facts = JSON.parse(closedFailureDiagnostic([{
+      error: { category: 'infrastructure', code: 'ENGINE_FAILURE', phase: 'cleanup', message: 'The native browser cleanup could not be proven' },
+      cleanup: 'failed', secondaryErrors: [], steps: [],
+    }]));
+    expect(facts.attempts[0]).toEqual({
+      error: { category: 'infrastructure', code: 'ENGINE_FAILURE', phase: 'cleanup', origin: 'native-cleanup-unproven' },
+      cleanup: 'failed', secondaryErrors: [], failedSteps: [],
+    });
+  });
+
   it('recognizes only exact fixed lifecycle messages or the exact first stack line', () => {
     const raw = 'secret-value-and-url';
     const facts = JSON.parse(closedFailureDiagnostic([
