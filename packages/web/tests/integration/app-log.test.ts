@@ -34,20 +34,33 @@ const PAGE = `<!doctype html><html><body><h1>Todos</h1><script>
   setTimeout(() => { throw new RangeError('render loop exceeded'); }, 0);
 </script></body></html>`;
 
+/**
+ * The tab's first document is best effort whenever another CDP client shares
+ * the browser (#153): it reports its own boot, and the opener navigates it on,
+ * so the engine reports a document created after registration.
+ */
+const TAB = `<!doctype html><h1>/tab</h1><script>opener.postMessage({ kind: 'tab-boot' }, location.origin);</script>`;
+
 // Keep the three positive live-screen reads separate from popup enrollment.
 // The third real tap opens the app tab, proving the earlier taps were not no-ops.
-const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="this.dataset.taps = String(Number(this.dataset.taps || 0) + 1); if (this.dataset.taps === '3') window.open('/tab', '_blank')">Help</button><script>
+const MOVING = `<!doctype html><html><body><h1>Moving</h1><button onclick="this.dataset.taps = String(Number(this.dataset.taps || 0) + 1); if (this.dataset.taps === '3') window.tab = window.open('/tab', '_blank')">Help</button><script>
   const frame = document.createElement('iframe');
   frame.name = 'pay';
   frame.src = '/embed';
   document.body.append(frame);
+  addEventListener('message', (event) => {
+    if (event.origin !== location.origin || event.source !== window.tab) return;
+    if (event.data?.kind !== 'tab-boot' || window.tab === null) return;
+    window.tab.location.href = '/tab-next';
+  });
   fetch('/moving-next').then(() => { location.href = '/next'; });
 </script></body></html>`;
 
 /** The pages a navigation lands on, each naming its own path; served from here, never from the request. */
-const LANDINGS: Readonly<Record<string, string>> = Object.fromEntries(
-  ['/next', '/tab', '/embed'].map((landing) => [landing, `<!doctype html><h1>${landing}</h1>`]),
-);
+const LANDINGS: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(['/next', '/tab-next', '/embed'].map((landing) => [landing, `<!doctype html><h1>${landing}</h1>`])),
+  '/tab': TAB,
+};
 
 const signal = new AbortController().signal;
 const cleanup = (): EngineCleanupContext => ({ signal, timeoutMs: 30_000 });
@@ -176,23 +189,43 @@ describe('app log', () => {
           evidence.observer.assert(1, () => evidence.observer.assert(2, () => expect(screens).toHaveLength(3)));
           expect(screens.every(screen => screen.pixels === undefined && screen.treeUnavailable !== true && screen.root.children?.some(node => node.role === 'button' && node.name === 'Help'))).toBe(true);
           // Popup enrollment can exhaust the documented one-second best-effort
-          // trace budget. It must not weaken the three successful reads above,
-          // fail this separate action, or hide the app's navigation events.
+          // trace budget. It must not weaken the three successful reads above
+          // or fail this separate action. The tab's first document stays best
+          // effort (#153, agent-browser#110): the engine attaches its Playwright
+          // client to this owned browser, so that client can release the new
+          // tab's start pause before native registers it. The tab's own boot
+          // signal drives a later navigation, whose document is created after
+          // registration and is reported; that report is what this case asserts.
           traceOrdinal = undefined;
           await surface.perform(help!.ref, { kind: 'tap' }, operation());
-          releaseMovingNavigation();
           const navigations = () => [...went];
+          const tabNext = (line: string) => line.includes(`${url}/tab-next`);
+          // The opener stays on this page until the tab has booted and moved,
+          // so the tab's message reaches a listener and its report is the one
+          // this case observes.
+          await expect.poll(() => navigations().filter(tabNext), { timeout: 5_000 }).toHaveLength(1);
+          releaseMovingNavigation();
           await expect.poll(navigations, { timeout: 5_000 }).toEqual(expect.arrayContaining([
             `navigated to ${url}/next`,
             `frame "pay" loaded ${url}/embed`,
-            `the app opened a new tab at ${url}/tab; the test stays on its page`,
           ]));
-          expect(navigations()).toEqual(expect.arrayContaining([
-            `frame "pay" loaded ${url}/embed`,
-            `the app opened a new tab at ${url}/tab; the test stays on its page`,
-          ]));
-          expect(navigations().some((text) => text.includes('/moving'))).toBe(false);
-          expect(navigations().some((text) => text.startsWith('the new tab navigated'))).toBe(false);
+          const reported = navigations();
+          const firstDocument = `the app opened a new tab at ${url}/tab; the test stays on its page`;
+          // The tab's later navigation keeps whichever classification the engine
+          // assigned: a report of its first document, or, when that best-effort
+          // report was missed, the first report of the tab.
+          expect(reported.filter(tabNext)).toEqual([
+            reported.includes(firstDocument)
+              ? `the new tab navigated to ${url}/tab-next`
+              : `the app opened a new tab at ${url}/tab-next; the test stays on its page`,
+          ]);
+          // When the best-effort first document was observed, its line must be
+          // the exact opening report; only its presence is best effort.
+          expect(reported.filter((text) => text.includes(`at ${url}/tab;`)).every((text) => text === firstDocument)).toBe(true);
+          expect(reported).not.toContain(`navigated to ${url}/tab`);
+          expect(reported).not.toContain(`navigated to ${url}/tab-next`);
+          expect(reported).not.toContain(`the new tab navigated to ${url}/tab`);
+          expect(reported.some((text) => text.includes('/moving'))).toBe(false);
           await expect.poll(() => facts.length, { timeout: 5_000 }).toBe(1);
           expect(facts[0]).toEqual({ browser: expect.stringMatching(/^chromium \d+\./), 'user agent': expect.stringContaining('Chrome/') });
           evidence.passed('body');
