@@ -324,13 +324,23 @@ test('browser.goto refuses view-source', async ({ app, browser }) => {
 const CLASSES = `import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
-test('class assertions poll for a node that arrives late', async ({ app, browser }) => {
+test('class assertions poll for a node that arrives late', async ({ app, browser, screen }) => {
   await app.open('/classes');
-  await expect(browser).toHaveClass(browser.locator('#late-card'), 'card late', { timeout: 1800 });
+  // The page ships no late card and no timer for one: only the tap below asks
+  // for it, 600 ms later. The assertion starts polling first, so it has to
+  // read a missing node at least once before the node can exist.
+  if (await browser.evaluate(() => document.getElementById('late-card') !== null)) {
+    throw new Error('the late card existed before the assertion started polling');
+  }
+  const polled = expect(browser).toHaveClass(browser.locator('#late-card'), 'card late', { timeout: 1800 });
+  polled.catch(() => undefined);
+  await screen.getByRole('button', { name: 'Add late card' }).tap();
+  await polled;
 });
 
 test('reads wait for a node that arrives late', async ({ app, browser, screen }) => {
   await app.open('/classes');
+  await screen.getByRole('button', { name: 'Add late card' }).tap();
   expect(await browser.locator('#late-card').getAttribute('class')).toBe('card late');
   expect(await screen.getByText('Late card').textContent()).toBe('Late card');
 });
@@ -660,8 +670,17 @@ describe('web platform integration', () => {
   it('keeps a class assertion polling while the node is missing and passes once it arrives', () => {
     const result = resultByTitle(outcome, 'class assertions poll for a node that arrives late');
     expect(result.status, closedFailureDiagnostic(result.attempts, outcome.report.run.errors)).toBe('passed');
-    const step = result.attempts[0]!.steps.find((candidate) => candidate.api === 'expect.toHaveClass');
-    expect(step?.durationMs).toBeGreaterThan(500);
+    const steps = result.attempts[0]!.steps;
+    // The page has no late card and no timer for one. The assertion step opens
+    // before the tap that asks for the node, so its first read cannot see one:
+    // passing is the polling behavior, not a wait this machine happened to
+    // leave over. A duration bound would measure the latter.
+    const absent = steps.findIndex((candidate) => candidate.api === 'browser.evaluate');
+    const assertion = steps.findIndex((candidate) => candidate.api === 'expect.toHaveClass');
+    const tap = steps.findIndex((candidate) => candidate.api === 'locator.tap');
+    expect(absent).toBeGreaterThanOrEqual(0);
+    expect(assertion).toBeGreaterThan(absent);
+    expect(tap).toBeGreaterThan(assertion);
   });
 
   it('fails a read of a node that never arrives with LOCATOR_NOT_FOUND once the action timeout has run', () => {

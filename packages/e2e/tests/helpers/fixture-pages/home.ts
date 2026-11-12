@@ -119,7 +119,8 @@ line2  </textarea>
 </html>`),
   // Class assertions: a node that arrives late, duplicates, and the two
   // shapes of an empty class. Its own page so the late node never lands in
-  // another suite's screen diff.
+  // another suite's screen diff. The page ships no late node and no timer for
+  // one: the test asks for it after its assertion has started polling.
   '/classes': constant(`<!doctype html>
 <html>
 <head><title>Classes</title></head>
@@ -129,14 +130,17 @@ line2  </textarea>
   <span class="dup">Duplicated</span>
   <div id="blank-card" class="">Blank</div>
   <ul data-testid="items"><li>Item</li></ul>
+  <button onclick="addLateCard()">Add late card</button>
   <script>
-    setTimeout(() => {
-      const card = document.createElement('div');
-      card.id = 'late-card';
-      card.className = 'card late';
-      card.textContent = 'Late card';
-      document.body.appendChild(card);
-    }, 600);
+    function addLateCard() {
+      setTimeout(() => {
+        const card = document.createElement('div');
+        card.id = 'late-card';
+        card.className = 'card late';
+        card.textContent = 'Late card';
+        document.body.appendChild(card);
+      }, 600);
+    }
   </script>
 </body>
 </html>`),
