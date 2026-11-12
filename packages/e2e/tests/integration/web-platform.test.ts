@@ -44,8 +44,14 @@ test('deterministic queries and reads', async ({ app, screen, browser }) => {
   await expect(screen.getByTestId('item')).toHaveText(['Item Alpha', /Beta/, 'Item Gamma']);
   await expect(screen.getByTestId('item')).toContainText(['Alpha', 'Beta', 'Gamma']);
   await expect(screen.getByTestId('item')).toContainText(['Alpha', 'Gamma']);
-  await expect(screen.getByTestId('item')).not.toContainText(['Gamma', 'Alpha'], { timeout: 200 });
-  await expect(screen.getByTestId('item')).not.toHaveText(['Item Alpha', 'Item Beta'], { timeout: 200 });
+  // The verdict is the list matcher, not a read budget. One sample issues a
+  // native locate plus a read per match, and the reads are bounded by the
+  // assertion budget; a 200 ms budget can run out inside that sample, and the
+  // documented early-read-timeout rule then fails the assertion with the
+  // read's own error (run 43216166864). The short-budget negation pass itself
+  // is unit-tested in time.test.ts.
+  await expect(screen.getByTestId('item')).not.toContainText(['Gamma', 'Alpha']);
+  await expect(screen.getByTestId('item')).not.toHaveText(['Item Alpha', 'Item Beta']);
 
   expect(await screen.getByTestId('items').getAttribute('class')).toBeNull();
   expect(await browser.locator('#class-card').getAttribute('class')).toBe('card active');
@@ -76,7 +82,7 @@ test('a textarea value compares raw', async ({ app, screen }) => {
   await app.open();
   await expect(screen.getByLabel('Notes')).toHaveValue('line1\\n\\nline2  ');
   await expect(screen.getByLabel('Notes')).toHaveValue(/^line1\\n\\nline2 {2}$/);
-  await expect(screen.getByLabel('Notes')).not.toHaveValue('line1 line2', { timeout: 200 });
+  await expect(screen.getByLabel('Notes')).not.toHaveValue('line1 line2');
 });
 
 test('a textarea value is never normalized to match', async ({ app, screen }) => {
@@ -87,7 +93,7 @@ test('a textarea value is never normalized to match', async ({ app, screen }) =>
 test('toHaveAttribute reads the value attribute of plain fields', async ({ app, screen }) => {
   await app.open('/value-attributes');
   await expect(screen.getByLabel('Plain')).toHaveAttribute('value', 'marker-5e0c');
-  await expect(screen.getByLabel('Blank')).not.toHaveAttribute('value', { timeout: 200 });
+  await expect(screen.getByLabel('Blank')).not.toHaveAttribute('value');
 });
 
 test('toHaveAttribute never judges a secure field', async ({ app, screen }) => {
@@ -374,7 +380,7 @@ test('toHaveURL ignoreCase folds the comparison', async ({ app, browser }) => {
   await app.open('/classes');
   await expect(browser).toHaveURL('/CLASSES', { ignoreCase: true });
   await expect(browser).toHaveURL(/CLASSES$/, { ignoreCase: true });
-  await expect(browser).not.toHaveURL('/CLASSES', { timeout: 300 });
+  await expect(browser).not.toHaveURL('/CLASSES');
 });
 
 test('a negated toHaveURL ignoreCase fails on a case-folded match', async ({ app, browser }) => {
@@ -412,8 +418,8 @@ test('string and RegExp URL patterns match what they name', async ({ app, browse
   await app.open('/about');
   await expect(browser).toHaveURL('/about');
   await expect(browser).toHaveURL(/\\/about$/);
-  await expect(browser).not.toHaveURL('/other', { timeout: 200 });
-  await expect(browser).not.toHaveURL(/\\/other$/, { timeout: 200 });
+  await expect(browser).not.toHaveURL('/other');
+  await expect(browser).not.toHaveURL(/\\/other$/);
   await browser.waitForURL(/\\/about$/);
   await browser.route(/\\/other$/, (route) => route.abort());
   await browser.route(/\\/api\\/flags$/, (route) => route.fulfill({ json: { betaBoard: true } }));
