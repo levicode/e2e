@@ -50,6 +50,7 @@ const ORIGINS = [
   ['worker-disposal-pending', 'Native worker disposal is still pending'],
   ['worker-cleanup-unconfirmed', 'Native worker cleanup has not been confirmed'],
   ['close-unconfirmed', 'The native browser did not confirm scope closure'],
+  ['native-cleanup-unproven', 'The native browser cleanup could not be proven'],
   ['connection-ended-unsettled', 'The native browser connection ended before scope settlement'],
   ['cancel-unsettled', 'The native browser cancellation did not settle'],
   ['operation-unsettled', 'The native browser operation ended without a settled outcome'],

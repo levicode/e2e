@@ -250,8 +250,17 @@ jobs:
           }, null, 2), { flag: 'wx', mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
           FIXTURES
+      # The native diagnostics sink opens an existing regular file and stays
+      # inert without one, so an empty directory captured no settlement at all.
+      # The retry writes its own pair: the first pass can fill the slot's file
+      # to the sink's budget, and a rerun's receipt must not contend with it.
       - name: Prepare bounded native settlement capture
-        run: mkdir -p "$GITHUB_WORKSPACE/.e2e/native-capture"
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.e2e/native-capture"
+          for name in cleanup query cleanup-retry query-retry; do
+            : > "$GITHUB_WORKSPACE/.e2e/native-capture/$name.jsonl"
+          done
       - name: Unit and integration tests
         id: tests
         # The bounded retry below may rerun this slot's failed files once; the
@@ -324,8 +333,8 @@ jobs:
           # Bounded settlement capture for the two unlisted write-side
           # signatures on this pin: scalars and the failing stage only, no
           # page content. The native recorder caps each process's records.
-          AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/cleanup.jsonl
-          AGENT_BROWSER_QUERY_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/query.jsonl
+          AGENT_BROWSER_CLEANUP_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/cleanup-retry.jsonl
+          AGENT_BROWSER_QUERY_DIAGNOSTIC_FILE: ${{ github.workspace }}/.e2e/native-capture/query-retry.jsonl
           NODE_SELECTOR: ${{ matrix.node }}
           PRODUCTION_MANIFEST_SHA256: ${{ needs.native-runtime.outputs.manifest-sha256 }}
           PRODUCTION_RUN_ATTEMPT: ${{ needs.native-runtime.outputs.run-attempt }}
