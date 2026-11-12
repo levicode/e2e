@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "23cc7c81f171918ed4619b636e12cadeb6c47a32",
-    "tree": "d649027bd21e76a7a26688b131b73d3563b3da9c",
+    "commit": "3775a66265139682a1c2c43687f0c5a571d448f8",
+    "tree": "0198c4498f9c839a6ac3e7f50309b3a864803145",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -318,7 +318,8 @@
     "native::client_observation::tests::display_none_prefilter_proves_only_element_iframe_owners",
     "native::client_debt::tests::failed_evaluation_retains_result_and_exception_objects_without_losing_the_owner",
     "native::client_debt::tests::unaccounted_creation_handles_still_contaminate_beside_an_exception_object",
-    "native::client_transport::tests::terminal_close_after_shutdown_uses_cached_proof_without_request_revival"
+    "native::client_transport::tests::terminal_close_after_shutdown_uses_cached_proof_without_request_revival",
+    "native::client_network::retirement_receipt_tests::invalid_interception_ack_retires_the_callback_without_quarantining"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
@@ -353,427 +354,427 @@
       {
         "name": "native::cdp::client::tests::point_drag_setup_preserves_only_typed_local_capacity_and_exact_cancellation",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::observation_read_submit_stop_keeps_exact_cause_and_zero_wire",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::observation_read_stop_evidence_rejects_foreign_operation_bindings",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::observation_read_later_stop_does_not_relabel_remote_error_transport_or_success",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::action_typed_submit_refusal_after_writer_wait_keeps_exact_cause_and_zero_wire",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::dropped_waiter_keeps_reader_debt_and_late_handle_gets_one_original_session_release",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::query_command_timing_preserves_reply_and_dropped_waiter",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::i10_t01_readonly_disposal_handoff_retains_exact_groups_until_matching_ack",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::readonly_empty_group_acks_exhaust_cleanup_before_reference_admission",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::readonly_disposal_capacity_refusal_keeps_exact_acquired_group_custody",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_serial_enables_cannot_reach_resume_without_ack",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_submits_in_order_then_joins_every_real_ack",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_submission_failure_drains_sent_command_without_resume",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_checks_session_owner_retirement_and_original_deadline",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_cancel_drop_or_deadline_preserves_debt_until_late_acks",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_deadline_does_not_wait_for_pending_cleanup_lock",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_exact_detach_creates_retired_candidate_without_an_ack",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_retirement_malformed_or_unverified_reply_is_not_an_error_ack_or_retirement",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_retirement_wrong_session_ancestor_or_target_destroyed_is_insufficient",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_retirement_final_consumer_rechecks_original_owner_generation_and_bound",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_retirement_final_lock_rechecks_operation_and_bootstrap_bounds",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_all_ack_final_lock_rechecks_operation_and_bootstrap_bounds",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_all_ack_consumer_rejects_owner_replaced_while_waiting",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_all_ack_reader_publication_retains_startup_receipt",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_other_owned_publication_rechecks_normal_ready",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_retired_reader_publication_retains_original_proof",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_publication_wait_preserves_bounds_and_owner",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_connection_loss_does_not_prove_worker_retirement",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_replacement_detach_cannot_settle_original_owner_debt",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_failed_terminal_preserves_errors_and_refuses_ready_authority",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_pending_failure_preserves_error_without_retirement_authority",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::service_worker_startup_error_ack_is_not_pardoned_by_sibling_detachment",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::navigation_stop_requires_exact_retiring_journal_and_original_writer_deadline",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::owner_cleanup_rechecks_exact_ledger_and_deadline_after_writer_wait",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::eof_error_classifier_rejects_unknown_local_and_timeout_failures",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::remote_connection_loss_is_distinct_from_local_close",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::reader_eof_cannot_launder_uncorrelated_malformed_frames_or_live_session",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::negotiated_receive_limit_closes_oversized_response_without_reuse",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_foreign_payload_cannot_charge_or_mint_receipt",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_oversize_retains_receipt_but_never_returns_data",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_duplicate_overflow_retains_receipt_and_fails_closed",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_closed_without_event_never_mints_receipt",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_invalid_envelope_never_mints_cleanup_authority",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_route_outlives_helper_through_retained_receiver",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_final_seal_rejects_duplicate_after_first_receive",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_drag_cleanup_seal_accepts_only_one_healthy_owned_payload",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::eval_publication_completion_preserves_exact_route_and_identity_failures",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_tap_watermark_includes_queued_events_and_sequence_survives_recv",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_tap_watermark_fails_on_overflow_disconnect_and_counter_exhaustion",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_tap_watermark_rejects_same_id_replaced_subscription",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::exact_tap_publication_fence_retains_reader_admission_lock",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::terminal_receipt_count_requires_closed_empty_exact_receiver_without_overflow",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::bounded_control_overflow_never_delivers_partial_history_as_complete",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::bounded_control_size_limit_and_subscription_drop_are_explicit",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::bounded_control_filters_unrelated_events_without_consuming_capacity",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::bounded_event_budget_remains_charged_after_receive_and_lease_clone",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::bounded_event_budget_reclaims_released_events_and_accepts_large_original_body",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::repairs_only_unpaired_surrogate_escapes",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::extracts_only_positive_top_level_command_ids",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::repairs_response_and_event_then_processes_next_command",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::detached_waiters_match_only_exact_nonempty_session_not_parent_or_other_events",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::real_detachment_wakes_held_mutating_evaluation_without_ack_replay_or_erased_mutation",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::malformed_response_fails_only_its_top_level_pending_command",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::close_releases_pending_and_rejects_all_write_paths",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::concurrent_close_sends_close_and_forces_tcp_eof_with_inspect_alive",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::close_is_bounded_when_the_sink_is_busy",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::rustls_close_forces_underlying_tcp_eof",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::normalizes_only_root_websocket_queries",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::root_websocket_url_with_query_sends_slash_request_target",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::private_session_events_bypass_the_broadcast",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
         "name": "native::cdp::client::tests::method_tap_keeps_every_event_when_the_broadcast_lags",
         "path": "cli/src/native/cdp/client.rs",
-        "sha256": "1b4af3616fe14596b13ecf639b9773d7956e5d5289766e1068da0e48ba6f4151",
+        "sha256": "cbbfd9a17c9c0aa5b668bebb453826a7ba1e301de4c6e445dfcde2799d760518",
         "ignored": false
       },
       {
