@@ -37,6 +37,13 @@ const boardLedger = `<script>(() => {
   } catch { dispose(); }
 })();</script>`;
 
+// CONTRACT (#153): a popup's first document is best effort whenever the browser
+// is shared with another CDP client. The owned target is shared too: the engine
+// launches this browser and attaches its Playwright client for the live
+// surface, so the popup's first document is observed only. The popup-swipe
+// fixture shared with the borrowed pair waits for the popup's own boot signal,
+// reloads, and asserts the document created after registration; the
+// engine-started main, frame and reloaded documents keep full assertions.
 describe('same-fixture popup and path-swipe diagnostic pair', () => {
   let server: Server | undefined;
   let project: FixtureProject | undefined;
@@ -133,6 +140,9 @@ describe('same-fixture popup and path-swipe diagnostic pair', () => {
   });
   it.each(titles)('%s', title => {
     const result = resultByTitle(outcome, title);
-    expect(result.status, JSON.stringify({ facts, dragFacts, rejected, errors: outcome.report.run.errors, attempts: result.attempts })).toBe('passed');
+    // The fixture observes a shared popup's best-effort first document (#153)
+    // and asserts the reloaded, engine-started document instead; the main and
+    // frame documents keep their strict assertions.
+    expect(result.status, `CONTRACT (#153): a shared popup's first document is best effort; the reloaded document and every engine-started document must pass. ${JSON.stringify({ facts, dragFacts, rejected, errors: outcome.report.run.errors, attempts: result.attempts })}`).toBe('passed');
   });
 });
