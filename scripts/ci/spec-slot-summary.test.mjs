@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { compareSlots, fetchAnnotations, parseLog, readSummaries, render, slotFromJobName, summarize } from './spec-slot-summary.mjs';
+import { loadWhitelist } from './flake-retry.mjs';
+import { classifyJobFailure, compareSlots, fetchAnnotations, fetchJobFailureKinds, fetchJobLog, parseLog, readSummaries, render, slotFromJobName, summarize, testSteps } from './spec-slot-summary.mjs';
 
 const log = [
   '  \u001b[1m\u001b[41m FAIL \u001b[49m\u001b[22m \u001b[30m\u001b[103m web \u001b[49m\u001b[39m explore\u001b[2m > \u001b[22mExplore the home page and find bugs',
@@ -66,8 +67,8 @@ test('the gate table names each failed slot, its tests and its collection errors
     { slot: '22', node: 'v22.22.3', status: 'success', jobStatus: 'success', exitCode: 0, testReached: true, failures: [], errors: [] },
     { slot: '22.22.3', node: 'v22.22.3', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true, failures: [{ test: 'integration | tests/integration/explore.test.ts > Look around' }], errors: ['configuration error COLLECTION_ERROR'] },
   ], { test: { result: 'failure' } });
-  assert.match(markdown, /\| 22 \| success \| — \|/);
-  assert.match(markdown, /\| 22\.22\.3 \| failure \| `integration \\\| tests\/integration\/explore\.test\.ts > Look around`<br>error: configuration error COLLECTION_ERROR \|/);
+  assert.match(markdown, /\| 22 \| success \| — \| — \|/);
+  assert.match(markdown, /\| 22\.22\.3 \| failure \| test \| `integration \\\| tests\/integration\/explore\.test\.ts > Look around`<br>error: configuration error COLLECTION_ERROR \|/);
 });
 
 test('the report notices a failed job that never wrote a slot summary', () => {
@@ -182,4 +183,305 @@ test('the retry audit file beside a summary is not read as a second slot', () =>
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+// The shape run 43020654584 attempt 2 shows: the matrix job starts, its setup
+// step fails on the archive mirror, and the test step is skipped.
+const aptMirrorLog = [
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:49:56.7356578Z Ign:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease',
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:51:07.4901460Z   Temporary failure resolving \'azure.archive.ubuntu.com\'',
+  'test (22)\tUNKNOWN STEP\t2026-11-11T13:51:57.9132978Z W: Failed to fetch mirror+file:/etc/apt/apt-mirrors.txt/dists/noble/InRelease  Temporary failure resolving \'azure.archive.ubuntu.com\'',
+].join('\n');
+
+const failedSetupJob = {
+  name: 'test (22)',
+  conclusion: 'failure',
+  steps: [
+    { number: 1, name: 'Set up job', conclusion: 'success' },
+    { number: 5, name: 'Run pnpm install --frozen-lockfile', conclusion: 'success' },
+    { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+    { number: 10, name: 'Unit and integration tests', conclusion: 'skipped' },
+    { number: 11, name: 'Per-slot test summary', conclusion: 'success' },
+    { number: 13, name: 'Require the slot verdict', conclusion: 'failure' },
+  ],
+};
+
+const failedTestJob = {
+  name: 'test (24)',
+  conclusion: 'failure',
+  steps: [
+    { number: 5, name: 'Run pnpm install --frozen-lockfile', conclusion: 'success' },
+    { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+    { number: 10, name: 'Unit and integration tests', conclusion: 'failure' },
+  ],
+};
+
+function infrastructureEntries() {
+  return loadWhitelist(path.join(import.meta.dirname, 'known-flakes.json')).entries
+    .filter(entry => entry.kind === 'infrastructure')
+    .map(entry => ({ ...entry, compiled: (entry.patterns ?? []).map(pattern => new RegExp(pattern)) }));
+}
+
+test('each classified job names every step that runs its tests', () => {
+  assert.deepEqual(testSteps('test (22.22.3)'), ['Unit and integration tests']);
+  assert.deepEqual(testSteps('check'), ['UAT verification app tests', 'Agent skill and CI script tests', 'Testbed']);
+  assert.deepEqual(testSteps('consumers'), ['Run the reference consumer matrix with exact counts']);
+  // The branch-gated jobs only run on one integration branch and mix setup
+  // with tests in the same step, so the gate does not classify them.
+  assert.equal(testSteps('native-targeted'), undefined);
+  assert.equal(testSteps('popup-joint'), undefined);
+  assert.equal(testSteps('install (11)'), undefined);
+  assert.equal(testSteps('native-runtime / build'), undefined);
+});
+
+test('a failure in either check test step is a test failure, not a missing test', () => {
+  const steps = [
+    { number: 9, name: 'UAT verification app tests', conclusion: 'failure' },
+    { number: 19, name: 'Agent skill and CI script tests', conclusion: 'skipped' },
+    { number: 22, name: 'Testbed', conclusion: 'skipped' },
+  ];
+  const uat = classifyJobFailure({ job: { name: 'check', conclusion: 'failure', steps }, entries: infrastructureEntries() });
+  assert.equal(uat.kind, 'test');
+  assert.equal(uat.testsExecuted, true);
+  assert.equal(uat.step, 'UAT verification app tests');
+  const scripted = classifyJobFailure({
+    job: { name: 'check', conclusion: 'failure', steps: steps.map(step => (step.number === 9 ? { ...step, conclusion: 'success' } : step.number === 19 ? { ...step, conclusion: 'failure' } : step)) },
+    entries: infrastructureEntries(),
+  });
+  assert.equal(scripted.kind, 'test');
+  assert.equal(scripted.step, 'Agent skill and CI script tests');
+});
+
+test('a skipped test step and the registered mirror error make infrastructure', () => {
+  const verdict = classifyJobFailure({ job: failedSetupJob, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'infrastructure');
+  assert.equal(verdict.testsExecuted, false);
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  assert.equal(verdict.entry, 'runner-apt-mirror-unreachable');
+  assert.match(verdict.reason, /registered environment error/);
+});
+
+test('a check setup failure after its preflight tests passed is still infrastructure', () => {
+  const job = {
+    name: 'check',
+    conclusion: 'failure',
+    steps: [
+      { number: 9, name: 'UAT verification app tests', conclusion: 'success' },
+      { number: 19, name: 'Agent skill and CI script tests', conclusion: 'success' },
+      { number: 20, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+      { number: 22, name: 'Testbed', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'infrastructure');
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  const unproven = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(unproven.kind, 'unclassified');
+  assert.equal(unproven.testsExecuted, true);
+  assert.match(unproven.reason, /the test step passed, but Set up source-pinned native runtime failed/);
+});
+
+test('a failed test step is a test failure even when the log quotes the same environment error', () => {
+  const verdict = classifyJobFailure({ job: failedTestJob, log: aptMirrorLog, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'test');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.step, 'Unit and integration tests');
+});
+
+test('a cancelled test step is unclassified with the outcome unknown, not "tests did not execute"', () => {
+  const job = {
+    name: 'test (26)',
+    conclusion: 'cancelled',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'cancelled' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.outcome, 'unknown');
+  assert.equal(verdict.step, 'Unit and integration tests');
+  const markdown = render(
+    [{ slot: '26', status: 'cancelled', jobStatus: 'cancelled', exitCode: null, testReached: false, failures: [], errors: [] }],
+    { test: { result: 'cancelled' } }, {}, { 'test (26)': verdict },
+  );
+  assert.match(markdown, /unclassified \(tests executed; outcome unknown\)/);
+  assert.doesNotMatch(markdown, /tests did not execute/);
+});
+
+test('a job whose tests passed but a later step failed is not a test failure', () => {
+  const job = {
+    name: 'test (24)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'success' },
+      { number: 15, name: 'Bind popup evidence to this run, attempt, slot and Chromium', conclusion: 'failure' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job, entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.testsExecuted, true);
+  assert.equal(verdict.step, 'Bind popup evidence to this run, attempt, slot and Chromium');
+  assert.match(verdict.reason, /the test step passed/);
+});
+
+test('a setup failure the list does not explain stays unclassified', () => {
+  const pinJob = {
+    name: 'test (26)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'failure' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job: pinJob, log: 'Error: the native runtime manifest digest does not match', entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.step, 'Set up source-pinned native runtime');
+  assert.match(verdict.reason, /carries no registered environment error/);
+});
+
+test('a step without a registered log pattern is not infrastructure', () => {
+  const entries = [{ id: 'step-only', step: 'Set up source-pinned native runtime', compiled: [] }];
+  const verdict = classifyJobFailure({ job: failedSetupJob, log: aptMirrorLog, entries });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.match(verdict.reason, /carries no registered environment error/);
+});
+
+test('a failing lint or typecheck step is not infrastructure, though no test ran', () => {
+  const checkJob = {
+    name: 'check',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Lint', conclusion: 'failure' },
+      { number: 22, name: 'Testbed', conclusion: 'skipped' },
+    ],
+  };
+  const verdict = classifyJobFailure({ job: checkJob, log: 'error: no-unused-vars', entries: infrastructureEntries() });
+  assert.equal(verdict.kind, 'unclassified');
+  assert.equal(verdict.step, 'Lint');
+  assert.match(verdict.reason, /Lint carries no registered environment error/);
+});
+
+test('a job that never got a runner and a missing log are unclassified, not infrastructure', () => {
+  const cancelled = classifyJobFailure({ job: { name: 'test (22)', conclusion: 'cancelled', steps: [] }, entries: infrastructureEntries() });
+  assert.equal(cancelled.kind, 'unclassified');
+  assert.match(cancelled.reason, /no environment error is recorded/);
+  const noLog = classifyJobFailure({ job: failedSetupJob, entries: infrastructureEntries() });
+  assert.equal(noLog.kind, 'unclassified');
+  assert.match(noLog.reason, /log of Set up source-pinned native runtime is unavailable/);
+});
+
+test('the failed jobs API is classified per job and only test-bearing jobs are listed', async () => {
+  const kinds = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '43020654584', token: 't', entries: infrastructureEntries(),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        jobs: [
+          { id: 1, name: 'test (22)', conclusion: 'failure', steps: failedSetupJob.steps },
+          { id: 2, name: 'test (24)', conclusion: 'failure', steps: failedTestJob.steps },
+          { id: 3, name: 'check', conclusion: 'failure', steps: [{ number: 6, name: 'Lint', conclusion: 'failure' }, { number: 22, name: 'Testbed', conclusion: 'skipped' }] },
+          { id: 4, name: 'install (11)', conclusion: 'failure', steps: [] },
+          { id: 5, name: 'test (26)', conclusion: 'success', steps: [] },
+        ],
+      }),
+    }),
+    readLog: async job => (job.name === 'test (22)' ? aptMirrorLog : undefined),
+  });
+  assert.deepEqual(Object.keys(kinds), ['test (22)', 'test (24)', 'check']);
+  assert.equal(kinds['test (22)'].kind, 'infrastructure');
+  assert.equal(kinds['test (24)'].kind, 'test');
+  assert.equal(kinds.check.kind, 'unclassified');
+});
+
+test('a failed slot summary is a test failure even when the test step reports success', async () => {
+  const job = {
+    name: 'test (22)',
+    conclusion: 'failure',
+    steps: [
+      { number: 6, name: 'Set up source-pinned native runtime', conclusion: 'success' },
+      { number: 10, name: 'Unit and integration tests', conclusion: 'success' },
+      { number: 13, name: 'Require the slot verdict', conclusion: 'failure' },
+    ],
+  };
+  const kinds = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '1', token: 't', entries: infrastructureEntries(),
+    summaries: [{ slot: '22', status: 'failure', failures: [{ test: 'integration  tests/integration/web-platform.test.ts > denies navigation' }] }],
+    fetchImpl: async () => ({ ok: true, json: async () => ({ jobs: [job] }) }),
+    readLog: async () => undefined,
+  });
+  assert.equal(kinds['test (22)'].kind, 'test');
+  assert.equal(kinds['test (22)'].testsExecuted, true);
+  assert.equal(kinds['test (22)'].step, 'Unit and integration tests');
+  const passed = await fetchJobFailureKinds({
+    repo: 'levicode/e2e', run: '1', token: 't', entries: infrastructureEntries(),
+    summaries: [{ slot: '22', status: 'success', failures: [] }],
+    fetchImpl: async () => ({ ok: true, json: async () => ({ jobs: [job] }) }),
+    readLog: async () => undefined,
+  });
+  assert.equal(passed['test (22)'].kind, 'unclassified');
+  assert.equal(passed['test (22)'].testsExecuted, true);
+  assert.match(passed['test (22)'].reason, /the test step passed, but Require the slot verdict failed/);
+});
+
+test('a job log is read over REST, so a run still in progress yields it', async () => {
+  const calls = [];
+  const text = await fetchJobLog({
+    repo: 'levicode/e2e', job: { id: 7, name: 'test (22)' }, token: 't',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return { ok: true, text: async () => aptMirrorLog }; },
+  });
+  assert.equal(text, aptMirrorLog);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/levicode/e2e/actions/jobs/7/logs');
+  assert.equal(calls[0].options.headers.authorization, 'Bearer t');
+  assert.equal(calls[0].options.redirect, 'follow');
+  const missing = await fetchJobLog({
+    repo: 'levicode/e2e', job: { id: 7, name: 'test (22)' }, token: 't',
+    fetchImpl: async () => ({ ok: false, status: 404 }),
+  });
+  assert.equal(missing, undefined);
+});
+
+test('the gate prints infrastructure and test failures in separate columns', () => {
+  const kinds = {
+    'test (22)': { kind: 'infrastructure', testsExecuted: false, step: 'Set up source-pinned native runtime', entry: 'runner-apt-mirror-unreachable', reason: 'Set up source-pinned native runtime failed with the registered environment error of runner-apt-mirror-unreachable' },
+    'test (24)': { kind: 'test', testsExecuted: true, step: 'Unit and integration tests', reason: 'the test step ran' },
+    'check': { kind: 'unclassified', testsExecuted: false, step: 'Lint', reason: 'Lint carries no registered environment error' },
+  };
+  const markdown = render([
+    { slot: '22', status: 'skipped', jobStatus: 'skipped', exitCode: null, testReached: false, failures: [], errors: [] },
+    { slot: '24', status: 'failure', jobStatus: 'failure', exitCode: 1, testReached: true, failures: [{ test: 'integration  tests/integration/broken.test.ts > case' }], errors: [] },
+  ], { test: { result: 'failure' } }, {}, kinds);
+  assert.match(markdown, /\| 22 \| skipped \| infrastructure \(tests did not execute\) \| no failure line in the log \|/);
+  assert.match(markdown, /\| 24 \| failure \| test \| `integration  tests\/integration\/broken\.test\.ts > case` \|/);
+  assert.match(markdown, /### Failed jobs/);
+  assert.match(markdown, /\| test \(22\) \| infrastructure \(tests did not execute\) \| `Set up source-pinned native runtime` \| `runner-apt-mirror-unreachable` \|/);
+  assert.match(markdown, /\| check \| unclassified \(tests did not execute\) \| `Lint` \| Lint carries no registered environment error \|/);
+  assert.match(markdown, /not one of #25's three independent runs/);
+  assert.match(markdown, /::warning::test \(22\): infrastructure failure \(tests did not execute\)/);
+  // The skipped slot is explained, so the "no summary" warning must not fire.
+  assert.doesNotMatch(markdown, /no slot summary reports a failure/);
+});
+
+test('a failed job whose tests passed is not reported as a missing summary', () => {
+  const markdown = render([
+    { slot: '24', status: 'success', jobStatus: 'failure', exitCode: 0, testReached: true, failures: [], errors: [] },
+  ], { test: { result: 'failure' } }, {}, {
+    'test (24)': {
+      kind: 'unclassified', testsExecuted: true,
+      step: 'Bind popup evidence to this run, attempt, slot and Chromium',
+      reason: 'the test step passed, but Bind popup evidence to this run, attempt, slot and Chromium failed',
+    },
+  });
+  assert.doesNotMatch(markdown, /no slot summary reports a failure/);
+  assert.match(markdown, /unclassified \(tests executed; no test failed\)/);
+});
+
+test('without a classification a skipped slot says unclassified, never infrastructure', () => {
+  const markdown = render([
+    { slot: '22', status: 'skipped', jobStatus: 'skipped', exitCode: null, testReached: false, failures: [], errors: [] },
+  ], { test: { result: 'failure' } });
+  assert.match(markdown, /\| 22 \| skipped \| unclassified \(tests did not execute\) \|/);
+  assert.doesNotMatch(markdown, /infrastructure/);
 });
