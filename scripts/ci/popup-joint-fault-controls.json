@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "ebdcab22c79699b9c9e4d968e50d6eb02348646e",
-    "tree": "cc90b8c4f7dacb7da33eb9defe248a9cf8caba97",
+    "commit": "d84204496298d11ce1694577b52f0d46fd0e0e92",
+    "tree": "f9233081a22123db3b6cdd8c91e799c0336cb809",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -4117,19 +4117,19 @@
       {
         "name": "native::client_actions::tests::legacy_locator_dispatch::locator_clear_uses_exact_empty_value_then_fallback_delete",
         "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
-        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "sha256": "9f71a51547312afa3caae623c42e75d55289c4a47fa0b6d0242bb5edafaad620",
         "ignored": false
       },
       {
         "name": "native::client_actions::tests::legacy_locator_dispatch::locator_long_press_witnesses_original_900_ms_hold",
         "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
-        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "sha256": "9f71a51547312afa3caae623c42e75d55289c4a47fa0b6d0242bb5edafaad620",
         "ignored": false
       },
       {
         "name": "native::client_actions::tests::legacy_locator_dispatch::locator_select_option_positive_index_two_executes_native_selection",
         "path": "cli/src/native/client_actions_locator_dispatch_tests.rs",
-        "sha256": "1e7743eba7adbe551832ac978f8b5c3832a7d4c7cbb62c6ae473d3043833d210",
+        "sha256": "9f71a51547312afa3caae623c42e75d55289c4a47fa0b6d0242bb5edafaad620",
         "ignored": false
       },
       {
