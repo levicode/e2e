@@ -1206,17 +1206,25 @@ describe('web engine lifecycle', () => {
     const engine = web();
     await withAttempt(engine, app, artifactsDir, 'h1', async () => {
       const controller = new AbortController();
-      const started = Date.now();
       evidence.phase('body', 'navigate');
+      // Abort only once the fixture has the navigation request, which proves
+      // the browser started it: native settles a cancelled page.navigate as
+      // completed from that exact started-navigation witness and its aborted
+      // response. A wall-clock delay can land before the witness exists, when
+      // the contract's only honest settlement is unknown effects.
+      const inFlight = app.waitForSlowRequest();
       const pending = evidence.select(0, 'page.navigate', () => engine.session!.open!(`${app.url}/slow`, operation('h1', controller.signal)));
-      setTimeout(() => {
-        evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'enter' });
-        controller.abort();
-        evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'passed' });
-      }, 100);
+      await inFlight;
+      // The bound is the cancellation's own latency, not dispatch: native may
+      // spend up to 2.5 s settling a cancelled navigation that it does prove.
+      // It still rules out a cancellation that waited out the 5 s response.
+      const abortedAt = Date.now();
+      evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'enter' });
+      controller.abort();
+      evidence.evidence.record({ kind: 'phase', section: 'body', phase: 'abort', state: 'passed' });
       await evidence.assert(0, () => expect(pending).rejects.toMatchObject({ code: 'CANCELLED' }));
       evidence.phase('body', 'assertion');
-      expect(Date.now() - started).toBeLessThan(3_000);
+      expect(Date.now() - abortedAt).toBeLessThan(3_000);
     }, evidence, undefined, captureEnv);
   }, true));
 

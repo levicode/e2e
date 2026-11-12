@@ -528,14 +528,29 @@ export interface FixtureApp {
   readonly url: string;
   /** The same server under a second host, a different site for partition and cross-origin cases. */
   readonly loopbackUrl: string;
+  /**
+   * Resolves when the next request for `/slow` reaches the server, so a caller
+   * that cancels that navigation acts after the browser started it instead of
+   * racing its dispatch. Rejects if the request does not arrive within
+   * `timeoutMs`, or if the fixture closes first, so a caller never waits on a
+   * navigation that failed before it left the browser.
+   */
+  waitForSlowRequest(timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
 
 /** Starts the fixture on an ephemeral port and resolves once it is listening. */
 export function startFixtureApp(): Promise<FixtureApp> {
+  const slowRequests = new Set<(cause?: Error) => void>();
+  const settleSlowRequests = (cause?: Error): void => {
+    const waiters = [...slowRequests];
+    slowRequests.clear();
+    for (const settle of waiters) settle(cause);
+  };
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://fixture.test');
     if (url.pathname === '/slow') {
+      settleSlowRequests();
       const timer = setTimeout(() => {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         response.end(HOME);
@@ -609,10 +624,25 @@ export function startFixtureApp(): Promise<FixtureApp> {
       resolve({
         url: `http://127.0.0.1:${String(port)}`,
         loopbackUrl: `http://localhost:${String(port)}`,
-        close: () =>
-          new Promise<void>((done) => {
+        waitForSlowRequest: (timeoutMs = 4_000) => new Promise<void>((arrive, fail) => {
+          const settle = (cause?: Error): void => {
+            clearTimeout(timer);
+            slowRequests.delete(settle);
+            if (cause === undefined) arrive();
+            else fail(cause);
+          };
+          const timer = setTimeout(
+            () => settle(new Error(`The /slow navigation request did not reach the fixture within ${String(timeoutMs)} ms`)),
+            timeoutMs,
+          );
+          slowRequests.add(settle);
+        }),
+        close: () => {
+          settleSlowRequests(new Error('The fixture closed before a /slow request arrived'));
+          return new Promise<void>((done) => {
             server.close(() => done());
-          }),
+          });
+        },
       });
     });
   });
