@@ -155,6 +155,43 @@ test('source removal fails on retained backend, relocated assertions and legacy 
   assert.ok(candidateSourceProblems(root).some(problem => problem.includes('normal discovery')));
   assert.ok(candidateSourceProblems(root).some(problem => problem.includes('Legacy staging')));
 });
+test('source removal follows real module syntax and ignores comments and strings', t => {
+  const root = fixture(t); const web = join(root, 'packages/web'); mkdirSync(join(web, 'src'), { recursive: true });
+  for (const file of REQUIRED_MIGRATED_TEST_FILES) { const path = join(web, 'tests', file); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, 'native assertions'); }
+  const file = join(web, 'tests/unit/imported-backend.test.ts'); mkdirSync(dirname(file), { recursive: true });
+  const expected = (backend: string) => [`Test still imports a removed backend: packages/web/tests/unit/imported-backend.test.ts -> ${backend}`];
+  writeFileSync(file, [
+    "// History: the old entry lived at `packages/web/src/surface.ts@e557432`.",
+    "/* import { x } from '../../src/actions.ts'; */",
+    "// import { y } from '../../src/observe.ts';",
+    "const snippet = \"import { z } from '../../src/downloads.ts';\";",
+    "const note = 'the removed ../../src/video.ts backend';",
+    "const template = `the removed ../../src/refs.js backend`;",
+  ].join('\n'));
+  assert.deepEqual(candidateSourceProblems(root), []);
+  writeFileSync(file, "import { engine } from '../../src/surface.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('surface.ts'));
+  writeFileSync(file, "export { old } from '../../src/actions.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('actions.ts'));
+  writeFileSync(file, "const legacy = require('../../src/capture-scope.js');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('capture-scope.ts'));
+  writeFileSync(file, "const legacy = await import('../../src/video.ts');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('video.ts'));
+  writeFileSync(file, "const legacy = await import(`../../src/observe.ts`);\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('observe.ts'));
+  writeFileSync(file, "const legacy = `${await import('../../src/downloads.ts')}`;\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('downloads.ts'));
+  writeFileSync(file, "const a = 1 /* note\n*/ import { engine } from '../../src/video.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('video.ts'));
+  writeFileSync(file, "\uFEFFimport { engine } from '../../src/video.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('video.ts'));
+  writeFileSync(file, "vi.mock('../../src/actions.ts', () => ({}));\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('actions.ts'));
+  writeFileSync(file, "const resolved = require.resolve('../../src/refs.ts');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('refs.ts'));
+  writeFileSync(file, "const resolved = import.meta.resolve('../../src/refs.js');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('refs.ts'));
+});
 test('compiled package inventory binds every output and rejects a partial client-only build', t => {
   const root = fixture(t);
   for (const name of ['e2e', 'web']) { mkdirSync(join(root, 'packages', name, 'dist'), { recursive: true }); writeFileSync(join(root, 'packages', name, 'dist/index.js'), 'public complete entry'); }
