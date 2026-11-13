@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {NATIVE,LOCK,outside,checkSource,selectProduction,cleanEnvironment,prepareDirectories,verifyBinary,executeLogged} from './setup-source-native.mjs';
+import {assertBoundSourceHashes} from './ci/popup-joint-binding.ts';
 const repoRoot=new URL('..',import.meta.url);
 const readJSON=path=>JSON.parse(readFileSync(new URL(path,repoRoot),'utf8'));
 const digest=path=>createHash('sha256').update(readFileSync(new URL(path,repoRoot))).digest('hex');
@@ -15,12 +16,16 @@ test('candidate, source build, plans and popup binding carry exactly one native 
  const candidate=readJSON('.github/native-candidate.json');assert.equal(candidate.repository,'levicode/agent-browser');assert.equal(candidate.commit,NATIVE.commit);
  const plans=['scripts/ci/native-targeted-plan.json','scripts/ci/popup-joint-fault-controls.json'];
  for(const path of plans)assert.deepEqual(readJSON(path).native,{commit:NATIVE.commit,tree:NATIVE.tree,lockSHA256:LOCK});
- const binding=readJSON('scripts/ci/popup-joint-binding.json');assert.deepEqual(binding.native,{commit:NATIVE.commit,tree:NATIVE.tree});for(const path of plans)assert.equal(binding.sourceHashes[path],digest(path),path+' digest in the popup binding');
+ const binding=readJSON('scripts/ci/popup-joint-binding.json');assert.deepEqual(binding.native,{commit:NATIVE.commit,tree:NATIVE.tree});assertBoundSourceHashes(binding,digest);for(const path of ['.github/workflows/spec.yml','.github/workflows/native-runtime.yml','scripts/ci/popup-joint-binding.ts',...plans])assert.ok(Object.hasOwn(binding.sourceHashes,path),path+' is bound in the popup binding');
  for(const path of ['.github/native-candidate.json','scripts/setup-source-native.mjs','scripts/SOURCE-SETUP.md',...plans,'scripts/ci/popup-joint-binding.json']){
   const text=readFileSync(new URL(path,repoRoot),'utf8');
   for(const hex of text.match(/(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])/g)??[])assert.ok([NATIVE.commit,NATIVE.tree].includes(hex),path+' carries a second native pin: '+hex);
  }
  assert.ok(readFileSync(new URL('scripts/SOURCE-SETUP.md',repoRoot),'utf8').includes(NATIVE.commit));
+});
+test('popup binding rejects a changed workflow or diagnostic source digest',()=>{
+ const binding=readJSON('scripts/ci/popup-joint-binding.json'),changed={...binding,sourceHashes:{...binding.sourceHashes,'.github/workflows/spec.yml':'0'.repeat(64)}};
+ assert.throws(()=>assertBoundSourceHashes(changed,digest),/Stale popup binding digest for \.github\/workflows\/spec\.yml/);
 });
 test('fresh successful production only; missing/duplicate/test/cached/features/wrong paths rejected',()=>{assert.equal(selectProduction(rows(),'/native','/target').fresh,false);for(const mutate of [r=>r.pop(),r=>r.push({...r[1]}),r=>r[1].success=false,r=>r.push({...r[0]}),r=>r[0].profile.test=true,r=>r[0].fresh=true,r=>delete r[0].fresh,r=>r[0].features=['fault-injection'],r=>r[0].target.kind=['lib'],r=>r[0].manifest_path='/old/Cargo.toml',r=>r[0].target.src_path='/old/main.rs',r=>r[0].executable='/old/bin']){const r=rows();mutate(r);assert.throws(()=>selectProduction(r,'/native','/target'));}});
 test('source/environment cannot inherit old runtime/Chrome or compiler override',()=>{const input={PATH:'/bin',HOME:'/home/user',E2E_AGENT_BROWSER_EXECUTABLE:'/old',AGENT_BROWSER_SESSION:'old',E2E_CHROMIUM_EXECUTABLE:'/old',E2E_DIAGNOSTIC_FOO:'1',NATIVE_PROCESS_MODULE:'/old/fake-process.js',NODE_OPTIONS:'--import evil',RUSTFLAGS:'bad',CARGO_TARGET_DIR:'/old',GITHUB_TOKEN:'secret',OPENAI_API_KEY:'secret'};assert.deepEqual(cleanEnvironment(input),{PATH:'/bin',HOME:'/home/user',E2E_TELEMETRY_DISABLED:'1',E2E_UPDATE_CHECK_DISABLED:'1'});assert.equal(input.RUSTFLAGS,'bad');});

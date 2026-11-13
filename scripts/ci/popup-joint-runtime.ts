@@ -9,6 +9,7 @@ import { installedChromium } from '../acceptance/installed-chromium.ts';
 import { verifyFixtureRuntimeArtifacts } from './spec-fixture-runtime.ts';
 import { expectation } from './native-runtime.ts';
 import { POPUP_JOINT_CASE_ENTRY } from './popup-joint-case.ts';
+import { assertBoundSourceHashes } from './popup-joint-binding.ts';
 import { verifyCandidateRuntime } from '../acceptance/candidate-web.ts';
 import { REQUIRED_CAPABILITIES } from '../../packages/web/src/native/capabilities.ts';
 import { SEMANTIC_FAULT_CAPABILITY } from '../../packages/web/tests/helpers/semantic-fault-runtime.ts';
@@ -50,7 +51,7 @@ async function main(args:string[]):Promise<void> {
   const pair=verifyFixtureRuntimeArtifacts(production,fixture);chmodSync(pair.binary,0o755);chmodSync(pair.faultBinary,0o755);
   const manifest=JSON.parse(readFileSync(path.join(production.directory,'manifest.json'),'utf8'));
   assert.deepEqual(manifest.nativeSource,binding.native);
-  for(const [file,digest] of Object.entries(binding.sourceHashes))assert.equal(hash(file),digest,'Changed diagnostic source');
+  assertBoundSourceHashes(binding,hash);
   const script=owned(realpathSync('scripts/ci/popup-passive-joint-relay.py'));
   assert.equal(hash(script),'61a10b503a9453a0c171f96f5847d3b60adbc9a31071b5b5e15a75fbc1aeb6f8');
   const python=owned(path.join(root,'venv/bin/python3'));accessSync(python,constants.X_OK);assert.ok(python.startsWith(owned(path.join(root,'venv'),true)+path.sep));
