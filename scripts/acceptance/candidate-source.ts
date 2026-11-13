@@ -152,9 +152,11 @@ export function candidateSourceProblems(root: string): string[] {
   return problems;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const output = process.argv[2]; if (!output) throw new Error('usage: candidate-source.ts output');
-  mkdirSync(output, { recursive: true }); const problems = candidateSourceProblems(REPO_ROOT);
-  writeFileSync(join(output, 'source-removal.result.json'), JSON.stringify({ schemaVersion: 1, status: problems.length ? 'failed' : 'passed', problems, releaseEligible: false }, null, 2));
+  const output = process.argv[2]; const problems = candidateSourceProblems(REPO_ROOT);
+  if (output) {
+    mkdirSync(output, { recursive: true });
+    writeFileSync(join(output, 'source-removal.result.json'), JSON.stringify({ schemaVersion: 1, status: problems.length ? 'failed' : 'passed', problems, releaseEligible: false }, null, 2));
+  }
   for (const problem of problems) process.stderr.write(`${problem}\n`);
   if (problems.length) process.exitCode = 1;
 }
