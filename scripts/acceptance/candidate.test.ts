@@ -181,6 +181,16 @@ test('source removal follows real module syntax and ignores comments and strings
   assert.deepEqual(candidateSourceProblems(root), expected('observe.ts'));
   writeFileSync(file, "const legacy = `${await import('../../src/downloads.ts')}`;\n");
   assert.deepEqual(candidateSourceProblems(root), expected('downloads.ts'));
+  writeFileSync(file, "const a = 1 /* note\n*/ import { engine } from '../../src/video.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('video.ts'));
+  writeFileSync(file, "\uFEFFimport { engine } from '../../src/video.ts';\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('video.ts'));
+  writeFileSync(file, "vi.mock('../../src/actions.ts', () => ({}));\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('actions.ts'));
+  writeFileSync(file, "const resolved = require.resolve('../../src/refs.ts');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('refs.ts'));
+  writeFileSync(file, "const resolved = import.meta.resolve('../../src/refs.js');\n");
+  assert.deepEqual(candidateSourceProblems(root), expected('refs.ts'));
 });
 test('compiled package inventory binds every output and rejects a partial client-only build', t => {
   const root = fixture(t);

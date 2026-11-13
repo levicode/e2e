@@ -26,7 +26,8 @@ export const REQUIRED_MIGRATED_TEST_FILES = [
  * real import specifier stays available while a path quoted for history
  * cannot read as a dependency.
  */
-function maskSource(source: string): { code: string; strings: string[] } {
+function maskSource(input: string): { code: string; strings: string[] } {
+  const source = input.startsWith('\uFEFF') ? input.slice(1) : input;
   const strings: string[] = [];
   const code: string[] = [];
   const frames: { mode: 'code' | 'template'; braces: number }[] = [{ mode: 'code', braces: -1 }];
@@ -46,8 +47,10 @@ function maskSource(source: string): { code: string; strings: string[] } {
     }
     if (character === '/' && source[index + 1] === '*') {
       const end = source.indexOf('*/', index + 2);
-      index = end === -1 ? source.length : end + 2;
-      code.push(' '); continue;
+      const stop = end === -1 ? source.length : end + 2;
+      // Keep the comment's line terminators: ASI can depend on a newline inside one.
+      code.push(` ${source.slice(index, stop).replace(/[^\n]/g, '')}`);
+      index = stop; continue;
     }
     if (character === "'" || character === '"') {
       let end = index + 1; let value = '';
@@ -120,6 +123,9 @@ function importedSpecifiers(source: string): string[] {
     /(?:^|[;{}])[ \t]*export\b[^;]*?\bfrom\s*__STRING_(\d+)__/gm,
     /\bimport\s*\(\s*__STRING_(\d+)__/g,
     /\brequire\s*\(\s*__STRING_(\d+)__/g,
+    /\bvi\.(?:mock|doMock|unmock|importActual|importMock)\s*\(\s*__STRING_(\d+)__/g,
+    /\brequire\.resolve\s*\(\s*__STRING_(\d+)__/g,
+    /\bimport\.meta\.resolve\s*\(\s*__STRING_(\d+)__/g,
   ];
   for (const pattern of patterns) for (const match of code.matchAll(pattern)) specifiers.add(strings[Number(match[1])]!);
   return [...specifiers];
