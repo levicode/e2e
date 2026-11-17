@@ -11,6 +11,8 @@ const common = ['schemaVersion', 'source', 'pid', 'record', 'operationSeq', 'pha
 const identity = ['generation', 'cleanupOwner', 'cleanupAttempt', 'cleanupLifecycle'];
 const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inventoryIntegrityLost', 'inventoryReservations', 'inventoryUnconfigured', 'inventoryObserved'];
 const screenshotFields = ['generation', 'screenshotStage', 'capturePhase', 'inventoryAfterFailure', 'error'];
+const screenshotOptionalFields = ['readCleanupCause'];
+const readCleanupCauses = new Set(['read-settlement', 'group-release', 'object-group-release', 'owner-release']);
 const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reservations', 'exact', 'lastEvent', 'lastTarget'];
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
 const workerFields = ['generation', 'workerOrdinal', 'admissionStep', 'admissionState', 'waitingForDebugger'];
@@ -56,8 +58,9 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const terminal = phase === 'TerminalCleanupCheckpoint';
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
   const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
-  const allowed = new Set([...required, ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
+  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
+  if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && item.operationSeq !== 0) return false;
