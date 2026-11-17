@@ -78,6 +78,16 @@ test('an inventory seal cause is optional, closed, and never inferred', () => {
   for (const cause of ['private', 'cleanup-failed', true, 1, null]) assert.equal(validCleanupRecord(inventory(1, { inventorySealCause: cause })), false);
 });
 
+function readProof(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('ReadProof', ordinal, { generation: 1, readCommand: 'page-url', readProofSigned: true, readProofMissing: 'none', ...facts });
+}
+test('per-read proof tags are unconditional closed facts', () => {
+  assert.equal(validCleanupRecord(readProof(1)), true);
+  for (const readCommand of ['page-activate', 'page-navigate', 'page-url', 'cookies-get', 'session-environment', 'browser-observe', 'state-restore']) assert.equal(validCleanupRecord(readProof(1, { readCommand })), true);
+  for (const readProofMissing of ['retention', 'inventory', 'cleanup']) assert.equal(validCleanupRecord(readProof(1, { readProofSigned: false, readProofMissing })), true);
+  for (const facts of [{ readCommand: 'private' }, { readCommand: true }, { readProofSigned: 'yes' }, { readProofSigned: false, readProofMissing: 'none' }, { readProofSigned: true, readProofMissing: 'cleanup' }, { readProofMissing: 'private' }]) assert.equal(validCleanupRecord(readProof(1, facts)), false);
+});
+
 test('a read cleanup cause is optional, closed, and never inferred', () => {
   assert.equal(validCleanupRecord(screenshot(1)), true);
   for (const cause of ['read-settlement', 'group-release', 'object-group-release', 'owner-release']) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), true);
