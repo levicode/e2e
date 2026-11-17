@@ -72,6 +72,17 @@ function screenshot(ordinal: number, facts: Record<string, unknown> = {}) {
 function readonlyPreparation(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('ReadonlyPrepareFailure', ordinal, { generation: 1, entryUs: 900_000, ack: 'none', window: 'not-entered', deadline: true, zeroInput: true, cleanup: 'not-observed', error: 'deadline-exceeded', ...facts });
 }
+test('an inventory seal cause is optional, closed, and never inferred', () => {
+  assert.equal(validCleanupRecord(inventory(1)), true);
+  for (const cause of ['explicit', 'dispatch-cleanup', 'publish-handles', 'shutdown', 'close', 'restart', 'network', 'capture', 'operation-state', 'retained-deadline', 'retained-settlement', 'retained-completion']) assert.equal(validCleanupRecord(inventory(1, { inventorySealCause: cause })), true);
+  for (const cause of ['private', 'cleanup-failed', true, 1, null]) assert.equal(validCleanupRecord(inventory(1, { inventorySealCause: cause })), false);
+});
+
+test('a read cleanup cause is optional, closed, and never inferred', () => {
+  assert.equal(validCleanupRecord(screenshot(1)), true);
+  for (const cause of ['read-settlement', 'group-release', 'object-group-release', 'owner-release']) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), true);
+  for (const cause of ['private', 'cleanup-failed', true, 1, null]) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), false);
+});
 test('readonly preparation timing has bounded closed fields and explicit receipt currency', () => {
   assert.equal(validCleanupRecord(readonlyPreparation(1)), true);
   for (const ack of ['current', 'retired']) assert.equal(validCleanupRecord(readonlyPreparation(1, { ack, ackUs: 0, wakeUs: 40_000, failUs: 0 })), true);
