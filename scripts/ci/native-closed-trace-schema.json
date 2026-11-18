@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "944597a2f6e08c1eb8fd89e14bb46ada56ce88ba",
+  "nativeCommit": "03beebfc0d02e594f933aa3223079cb1c8318a45",
   "required": [
     "schemaVersion",
     "source",
@@ -62,7 +62,8 @@
         "ServiceWorkerAdmission",
         "CaptureStarted",
         "CaptureLimitReached",
-        "ObserveInitialAcquisition"
+        "ObserveInitialAcquisition",
+        "ScopeIsolation"
       ]
     },
     "droppedBefore": {
@@ -822,6 +823,74 @@
         "quarantined",
         "closed"
       ]
+    },
+    "isolationLayer": {
+      "enum": [
+        "target-seal",
+        "enrollment-poison",
+        "retention-producer",
+        "session-quarantine",
+        "session-cancel"
+      ]
+    },
+    "isolationFile": {
+      "enum": [
+        "other",
+        "client-actions",
+        "client-browser",
+        "client-capture",
+        "client-debt",
+        "client-enrollment",
+        "client-enrollment-page-query",
+        "client-interop-wire",
+        "client-network",
+        "client-observation-dispatch",
+        "client-operation-state",
+        "client-protected-read",
+        "client-restart",
+        "client-session",
+        "client-settlement-trace",
+        "client-state",
+        "client-state-dispatch",
+        "client-tasks",
+        "client-targets",
+        "client-transport",
+        "cdp-client"
+      ]
+    },
+    "isolationLine": {
+      "int": 9007199254740991
+    },
+    "isolationReason": {
+      "enum": [
+        "explicit",
+        "failure",
+        "cleanup-failure",
+        "uncertain-outcome",
+        "capacity",
+        "terminal",
+        "owner-retirement",
+        "admission-closed",
+        "abandoned",
+        "resume-identity-mismatch",
+        "resume-permit-dropped",
+        "auxiliary-capacity",
+        "query-revision-exhausted",
+        "unknown-query-revision-exhausted",
+        "invalid-retirement-authority",
+        "auxiliary-ack-mismatch",
+        "auxiliary-abandoned",
+        "creation-abandoned",
+        "retained-deadline-seal",
+        "retained-settlement-seal",
+        "retained-completion-seal"
+      ]
+    },
+    "targetKinds": {
+      "array": {
+        "int": 65535
+      },
+      "length": 12
     },
     "error": {
       "enum": [

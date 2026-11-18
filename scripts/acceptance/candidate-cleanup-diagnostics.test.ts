@@ -16,6 +16,13 @@ test('closed schema rejects payloads, arbitrary components and error messages', 
   for (const item of completed()) assert.equal(validCleanupRecord(item), true);
   for (const item of [record('CleanupStarted', 1, { url: 'private' }), record('CleanupFirstFailure', 2, { cleanupComponent: 'private' }), record('CleanupResult', 3, { cleanupResult: 'failed', error: 'private' }), record('CleanupResult', 3, { cleanupResult: 'passed', error: 'cleanup-failed' }), record('CleanupStarted', 1, { cleanupOwner: 0 })]) assert.equal(validCleanupRecord(item), false);
 });
+test('an isolation record is independent evidence and never breaks a cleanup lifecycle', () => {
+  const isolationRecord = record('ScopeIsolation', 2, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0) });
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), isolationRecord, record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  const result = inspectCleanupBytes(lines(...values));
+  assert.equal(result.status, 'complete-observed-snapshots');
+  assert.equal(result.records.some(value => value.phase === 'ScopeIsolation'), true);
+});
 test('original failed lifecycle is complete evidence, not a passing product result', () => { const result = inspectCleanupBytes(lines(...completed())); assert.equal(result.status, 'complete-observed-snapshots'); assert.equal(result.records.at(-1)!.cleanupResult, 'failed'); });
 test('empty, truncated, dropped, overflow and missing terminal remain unknown', () => {
   for (const bytes of [Buffer.alloc(0), lines(...completed()).subarray(0, -1), lines(record('CaptureStarted', 0), record('CleanupStarted', 1)), lines(...completed().map((item, index) => index === 3 ? { ...item, droppedBefore: 1 } : item)), lines(...completed().map((item, index) => index === 3 ? { ...item, overflow: true } : item)), lines(record('CaptureLimitReached', 0)), Buffer.alloc(CLEANUP_BYTES + 1)]) assert.equal(inspectCleanupBytes(bytes).status, 'unknown');
@@ -82,6 +89,24 @@ test('a read cleanup cause is optional, closed, and never inferred', () => {
   assert.equal(validCleanupRecord(screenshot(1)), true);
   for (const cause of ['read-settlement', 'group-release', 'object-group-release', 'owner-release']) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), true);
   for (const cause of ['private', 'cleanup-failed', true, 1, null]) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), false);
+});
+function isolation(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('ScopeIsolation', ordinal, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0), ...facts });
+}
+test('scope isolation names its layer, caller and cause in a closed record', () => {
+  assert.equal(validCleanupRecord(isolation(1)), true);
+  for (const reason of ['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']) assert.equal(validCleanupRecord(isolation(1, { isolationReason: reason })), true);
+  const quarantine = record('ScopeIsolation', 1, { isolationLayer: 'session-quarantine', isolationFile: 'client-session', isolationLine: 1215, isolationReason: 'uncertain-outcome', scopeState: 'quarantined' });
+  assert.equal(validCleanupRecord(quarantine), true);
+  const poison = record('ScopeIsolation', 1, { isolationLayer: 'enrollment-poison', isolationFile: 'client-enrollment', isolationLine: 6636, isolationReason: 'cleanup-failure', error: 'cleanup-failed' });
+  assert.equal(validCleanupRecord(poison), true);
+  const retention = record('ScopeIsolation', 1, { isolationLayer: 'retention-producer', isolationFile: 'client-operation-state', isolationLine: 405, isolationReason: 'failure' });
+  assert.equal(validCleanupRecord(retention), true);
+  const cancelled = record('ScopeIsolation', 1, { isolationLayer: 'session-cancel', isolationFile: 'client-transport', isolationLine: 2540, isolationReason: 'explicit' });
+  assert.equal(validCleanupRecord(cancelled), true);
+  for (const facts of [{ isolationLayer: 'private' }, { isolationFile: 'private' }, { isolationReason: 'private' }, { isolationLine: 0 }, { isolationLine: -1 }, { isolationLayer: 'session-quarantine', isolationReason: 'uncertain-outcome' }, { isolationLayer: 'enrollment-poison', isolationFile: 'client-enrollment', isolationReason: 'failure' }, { scopeState: 'quarantined' }, { targetKinds: Array(11).fill(0) }, { targetKinds: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70_000] }, { targetKinds: undefined }, { error: 'cleanup-failed' }]) {
+    assert.equal(validCleanupRecord({ ...(Object.values(facts).includes(undefined) ? Object.fromEntries(Object.entries(isolation(1)).filter(([key]) => key !== 'targetKinds')) : isolation(1)), ...facts }), false);
+  }
 });
 test('readonly preparation timing has bounded closed fields and explicit receipt currency', () => {
   assert.equal(validCleanupRecord(readonlyPreparation(1)), true);
