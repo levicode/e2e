@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "ae3c53d7399f69f679e6da9305433092bd646699",
-    "tree": "823167f689967e147ab432e3cfcc65b32db9eb4b",
+    "commit": "8043d03d6a7da84e7d4da234ee9fedd52ecb7fa2",
+    "tree": "a5a6d91fdeadb7865365667ca0917b182c811e03",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -323,7 +323,9 @@
     "native::client_tasks::fixed_read_eof_tests::read_only_cancelled_settlement_keeps_scope_usable_and_drains_clean",
     "native::client_observation_dispatch::trace_initial_inventory_tests::observe_tests::observe_receipt_caller_stop_during_owner_read_keeps_the_scope_usable",
     "native::client_settlement_trace::cleanup_tests::read_cleanup_cause_is_scoped_and_first_wins",
-    "native::client_targets::owned_inventory_diagnostic_opt_in_tests::read_inventory_does_not_wait_for_an_unconfigured_auxiliary_browser_target"
+    "native::client_targets::owned_inventory_diagnostic_opt_in_tests::read_inventory_does_not_wait_for_an_unconfigured_auxiliary_browser_target",
+    "native::client_debt::tests::an_omitted_session_on_a_success_reply_still_loses_ledger_integrity",
+    "native::client_geometry::tests::empty_box_detects_zero_area_owner_boxes"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
@@ -2236,169 +2238,169 @@
       {
         "name": "native::client_geometry::tests::readonly_box_negative_identity_is_not_cleanup_loss",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::readonly_box_only_a_resolver_cleanup_failure_stays_dirty",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::strict_box_negative_identity_keeps_its_existing_fence",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::inverse_points_preserve_affine_and_projective_coordinates",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::frame_local_inverse_does_not_double_compose_same_renderer_ancestors",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::affine_composition_applies_nested_renderer_boundary_once",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::projective_quad_maps_corners_and_independent_center",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::rotated_reflected_and_fractional_quads_preserve_orientation",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::child_visual_offset_is_not_document_scroll",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::clipping_keeps_polygon_until_outward_rasterization",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::fractional_masks_use_actual_bitmap_scale_without_extra_integer_border",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::empty_clipping_is_not_an_all_black_mask",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::degenerate_nonfinite_bowtie_and_horizon_fail_closed",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::finite_vertices_do_not_hide_a_projective_horizon_between_them",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_quad_parser_rejects_partial_and_nonfinite_data",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::fractional_frame_source_size_is_not_scrollbar_excluding_integer_viewport",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::directed_intervals_cover_nonbinary_division_and_exact_integer_operations",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_tree_parent_edges_cannot_be_replaced_by_caller_claims",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_exclusion_preserves_full_native_ownership_without_spatial_reads",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::hidden_proof_cleanup_keeps_original_failure",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_projection_keeps_zero_area_bounds_without_granting_paint_authority",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::semantic_degenerate_bounds_retain_transform_and_reject_nonrectangular_collapse",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::native_geometry_ignores_legacy_additive_offsets_and_revalidates_viewport",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::failed_document_postproof_releases_all_owned_remote_handles",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::unexpected_native_frame_or_renderer_is_not_silently_omitted",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
         "name": "native::client_geometry::tests::chromium_shared_nested_frame_geometry_border_padding_scroll_and_scale",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": true
       },
       {
         "name": "native::client_geometry::tests::chromium_shared_nested_oopif_geometry_uses_proven_renderer_roots",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": true
       },
       {
         "name": "native::client_geometry::node_identity_box_proof_tests::box_negative_requires_exact_plain_by_value_object_envelope",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
@@ -4630,7 +4632,7 @@
       {
         "name": "native::client_geometry::tests::opaque_plugin_subtrees_are_proven_omissions_not_missing_inventory",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
@@ -4774,7 +4776,7 @@
       {
         "name": "native::client_geometry::tests::a_retired_exact_session_makes_a_resolver_failure_a_stale_identity",
         "path": "cli/src/native/client_geometry.rs",
-        "sha256": "af74de66e2afe07cbea7aa0fc76c14ae5474f825684e30ce39951b1fa03c8e86",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d",
         "ignored": false
       },
       {
@@ -4794,6 +4796,11 @@
         "path": "cli/src/native/client_debt.rs",
         "sha256": "101737960fd8b2dd1030abae89dabf8c922e1994cb87c001467f4ed0719b55a6",
         "ignored": false
+      },
+      {
+        "name": "native::client_geometry::tests::empty_box_detects_zero_area_owner_boxes",
+        "path": "cli/src/native/client_geometry.rs",
+        "sha256": "7d9bfd6f5be344200faa0cd8e3ea2bda26d2c9e3bb71436d7d7e933e94818b7d"
       }
     ],
     "knownDiagnosticGaps": [
