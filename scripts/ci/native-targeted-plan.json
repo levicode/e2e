@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "8043d03d6a7da84e7d4da234ee9fedd52ecb7fa2",
-    "tree": "a5a6d91fdeadb7865365667ca0917b182c811e03",
+    "commit": "d948b1eb368515dbe7f133872e73fb489829a13e",
+    "tree": "6af7f5799b9b80a2c7ef5ae7fbfc2359ee85ed17",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -325,7 +325,10 @@
     "native::client_settlement_trace::cleanup_tests::read_cleanup_cause_is_scoped_and_first_wins",
     "native::client_targets::owned_inventory_diagnostic_opt_in_tests::read_inventory_does_not_wait_for_an_unconfigured_auxiliary_browser_target",
     "native::client_debt::tests::an_omitted_session_on_a_success_reply_still_loses_ledger_integrity",
-    "native::client_geometry::tests::empty_box_detects_zero_area_owner_boxes"
+    "native::client_geometry::tests::empty_box_detects_zero_area_owner_boxes",
+    "native::client_enrollment::tests::auxiliary_page_level_kinds_are_central",
+    "native::client_enrollment::tests::auxiliary_worker_and_ui_targets_never_move_the_document_epoch",
+    "native::client_enrollment::tests::auxiliary_session_event_errors_are_local"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
