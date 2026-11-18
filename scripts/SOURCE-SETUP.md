@@ -1,6 +1,6 @@
 # Run from a verified source checkout
 
-This is a source-build entry, not a prebuilt/offline archive download. It builds the current committed JavaScript checkout and the pinned native source `03beebfc0d02e594f933aa3223079cb1c8318a45`. No runtime from a previous CI run is reused.
+This is a source-build entry, not a prebuilt/offline archive download. It builds the current committed JavaScript checkout and the pinned native source `ab82e6fdbc9065bace3baafc829cc52d7268ddae`. No runtime from a previous CI run is reused.
 
 Prerequisites: a clean checkout, a writable HOME owned by the current user, Git, Node **24.22.1**, pnpm **12.3.4**, and Rust/cargo with the host platform toolchain. Supported source setup hosts are Linux/macOS, x64/ARM64. Building and public Chromium installation require network access; Linux Chromium system dependencies may require the normal installer privileges. Choose canonical absolute paths whose parents already exist. Both new directories must not exist, must be outside the checkout, and must be separate.
 
