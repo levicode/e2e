@@ -62,13 +62,14 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const worker = phase === 'ServiceWorkerAdmission';
   const terminal = phase === 'TerminalCleanupCheckpoint';
   const isolation = phase === 'ScopeIsolation';
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : [])];
+  const backlog = phase === 'NetworkBacklog';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && !backlog && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : []), ...(backlog ? ['generation', 'networkPending', 'networkPendingTotal'] : [])];
   const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   if (inventory && Object.hasOwn(item, 'inventorySealCause') && (typeof item.inventorySealCause !== 'string' || !inventorySealCauses.has(item.inventorySealCause))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker || backlog ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !isolation && item.operationSeq !== 0) return false;
   if (terminal && (item.operationSeq !== 0 || typeof item.terminalCleanupStage !== 'string' || !terminalStages.has(item.terminalCleanupStage) || typeof item.terminalCleanupOk !== 'boolean')) return false;
@@ -135,6 +136,12 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     if (typeof item.cleanupResult !== 'string' || !['passed', 'failed'].includes(item.cleanupResult)) return false;
     if (item.cleanupResult === 'passed' && Object.hasOwn(item, 'error')) return false;
     if (item.cleanupResult === 'failed' && (typeof item.error !== 'string' || !errors.has(item.error))) return false;
+  }
+  if (backlog) {
+    const pending = item.networkPending;
+    if (!Array.isArray(pending) || pending.length !== 6 || !pending.every(count => natural(count) && count <= 65535)) return false;
+    if (!natural(item.networkPendingTotal) || item.networkPendingTotal > 65535) return false;
+    if (pending.reduce((sum: number, count: number) => sum + count, 0) < item.networkPendingTotal) return false;
   }
   if (isolation) {
     if (typeof item.isolationLayer !== 'string' || !isolationLayers.has(item.isolationLayer)) return false;
@@ -218,7 +225,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
       if (!value.exact) reasons.add('frame-inventory-inexact');
       continue; // Atomic rejection evidence, never cleanup coverage or case association.
     }
-    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
+    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation' || value.phase === 'NetworkBacklog') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
     if (value.phase === 'InventorySnapshot' || Object.hasOwn(targetFields, value.phase as string)) {
       if (value.phase === 'TargetObservationLost') reasons.add('target-observation-lost');
       if (value.targetObserved === false) reasons.add('target-inventory-unobserved');

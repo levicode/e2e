@@ -16,6 +16,15 @@ test('closed schema rejects payloads, arbitrary components and error messages', 
   for (const item of completed()) assert.equal(validCleanupRecord(item), true);
   for (const item of [record('CleanupStarted', 1, { url: 'private' }), record('CleanupFirstFailure', 2, { cleanupComponent: 'private' }), record('CleanupResult', 3, { cleanupResult: 'failed', error: 'private' }), record('CleanupResult', 3, { cleanupResult: 'passed', error: 'cleanup-failed' }), record('CleanupStarted', 1, { cleanupOwner: 0 })]) assert.equal(validCleanupRecord(item), false);
 });
+function backlog(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('NetworkBacklog', ordinal, { operationSeq: 0, generation: 1, networkPending: [2, 0, 0, 0, 0, 0], networkPendingTotal: 2, ...facts });
+}
+test('a network backlog record names the pending task classes in a closed shape', () => {
+  assert.equal(validCleanupRecord(backlog(1)), true);
+  for (const facts of [{ networkPending: Array(5).fill(0) }, { networkPending: [0, 0, 0, 0, 0, 70_000] }, { networkPendingTotal: 70_000 }, { networkPendingTotal: 3 }, { networkPendingTotal: -1 }, { networkPending: 'two' }, { generation: -1 }]) assert.equal(validCleanupRecord(backlog(1, facts)), false);
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), backlog(2), record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+});
 test('an isolation record is independent evidence and never breaks a cleanup lifecycle', () => {
   const isolationRecord = record('ScopeIsolation', 2, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0) });
   const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), isolationRecord, record('CleanupResult', 3, { cleanupResult: 'passed' })];

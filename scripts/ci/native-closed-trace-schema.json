@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "03beebfc0d02e594f933aa3223079cb1c8318a45",
+  "nativeCommit": "528030b6561ec92c24e0873edbda0643a0ecee01",
   "required": [
     "schemaVersion",
     "source",
@@ -63,7 +63,8 @@
         "CaptureStarted",
         "CaptureLimitReached",
         "ObserveInitialAcquisition",
-        "ScopeIsolation"
+        "ScopeIsolation",
+        "NetworkBacklog"
       ]
     },
     "droppedBefore": {
@@ -891,6 +892,15 @@
         "int": 65535
       },
       "length": 12
+    },
+    "networkPending": {
+      "array": {
+        "int": 65535
+      },
+      "length": 6
+    },
+    "networkPendingTotal": {
+      "int": 65535
     },
     "error": {
       "enum": [
