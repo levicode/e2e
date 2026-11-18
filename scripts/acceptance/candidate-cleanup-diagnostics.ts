@@ -37,6 +37,9 @@ const targetEnums: Record<string, readonly string[]> = {
   targetClassification: ['pending-reservation', 'unreserved-application', 'reserved-application', 'reserved-bootstrap', 'reservation-remainder'],
   targetStage: ['registered', 'configure-started', 'configure-ack', 'configure-failed', 'resumed', 'detached', 'restart-retiring', 'purpose-assigned'],
 };
+const isolationLayers = new Set(['target-seal', 'enrollment-poison', 'retention-producer', 'session-quarantine', 'session-cancel']);
+const isolationFiles = new Set(['other', 'client-actions', 'client-browser', 'client-capture', 'client-debt', 'client-enrollment', 'client-enrollment-page-query', 'client-interop-wire', 'client-network', 'client-observation-dispatch', 'client-operation-state', 'client-protected-read', 'client-restart', 'client-session', 'client-settlement-trace', 'client-state', 'client-state-dispatch', 'client-tasks', 'client-targets', 'client-transport', 'cdp-client']);
+const isolationReasons = new Set(['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']);
 const screenshotStages = new Set(['prepare-scope', 'prepare-permit', 'prepare-policy', 'prepare-owner', 'prepare-fence', 'run-scope', 'debt-admission', 'ui-admission', 'publication-admission', 'producer-reservation', 'initial-frames', 'frame-inventory-fence', 'protected-barrier', 'animation-stabilization', 'protected-frames', 'geometry', 'trace-metadata', 'capture', 'restoration', 'final-geometry', 'final-barrier', 'final-frames', 'final-viewport', 'blob-publication', 'publication']);
 const capturePhases = new Set(['not-entered', 'admission', 'independent-coverage', 'source-protection', 'raw-capture', 'post-capture-validation']);
 const components = new Set(['callback', 'dialog', 'interception', 'script', 'detach', 'recording', 'upload', 'containment', 'release', 'input', 'download', 'blob', 'enrollment-fallback', 'retained-task-fallback', 'owner-fallback']);
@@ -58,15 +61,16 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const target = Object.hasOwn(targetFields, phase);
   const worker = phase === 'ServiceWorkerAdmission';
   const terminal = phase === 'TerminalCleanupCheckpoint';
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : [])];
-  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : [])]);
+  const isolation = phase === 'ScopeIsolation';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : [])];
+  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   if (inventory && Object.hasOwn(item, 'inventorySealCause') && (typeof item.inventorySealCause !== 'string' || !inventorySealCauses.has(item.inventorySealCause))) return false;
   for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !isolation && item.operationSeq !== 0) return false;
   if (terminal && (item.operationSeq !== 0 || typeof item.terminalCleanupStage !== 'string' || !terminalStages.has(item.terminalCleanupStage) || typeof item.terminalCleanupOk !== 'boolean')) return false;
   if (worker) {
     if (item.operationSeq !== 0 || !natural(item.workerOrdinal) || item.workerOrdinal < 1 || item.workerOrdinal > 8) return false;
@@ -131,6 +135,21 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     if (typeof item.cleanupResult !== 'string' || !['passed', 'failed'].includes(item.cleanupResult)) return false;
     if (item.cleanupResult === 'passed' && Object.hasOwn(item, 'error')) return false;
     if (item.cleanupResult === 'failed' && (typeof item.error !== 'string' || !errors.has(item.error))) return false;
+  }
+  if (isolation) {
+    if (typeof item.isolationLayer !== 'string' || !isolationLayers.has(item.isolationLayer)) return false;
+    if (typeof item.isolationFile !== 'string' || !isolationFiles.has(item.isolationFile)) return false;
+    if (!natural(item.isolationLine) || item.isolationLine === 0) return false;
+    if (typeof item.isolationReason !== 'string' || !isolationReasons.has(item.isolationReason)) return false;
+    const kinds = item.targetKinds;
+    if (item.isolationLayer === 'target-seal') {
+      if (!Array.isArray(kinds) || kinds.length !== 12 || !kinds.every(count => natural(count) && count <= 65535)) return false;
+    } else if (Object.hasOwn(item, 'targetKinds')) return false;
+    if (Object.hasOwn(item, 'error') && (typeof item.error !== 'string' || !errors.has(item.error))) return false;
+    if (item.isolationLayer === 'enrollment-poison' && !Object.hasOwn(item, 'error')) return false;
+    if (item.isolationLayer !== 'enrollment-poison' && Object.hasOwn(item, 'error') && item.isolationReason !== 'capacity') return false;
+    if (Object.hasOwn(item, 'scopeState') && (typeof item.scopeState !== 'string' || !['quarantined', 'closed'].includes(item.scopeState))) return false;
+    if (item.isolationLayer === 'session-quarantine' ? item.scopeState !== 'quarantined' : Object.hasOwn(item, 'scopeState')) return false;
   }
   return true;
 }
@@ -199,7 +218,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
       if (!value.exact) reasons.add('frame-inventory-inexact');
       continue; // Atomic rejection evidence, never cleanup coverage or case association.
     }
-    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
+    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
     if (value.phase === 'InventorySnapshot' || Object.hasOwn(targetFields, value.phase as string)) {
       if (value.phase === 'TargetObservationLost') reasons.add('target-observation-lost');
       if (value.targetObserved === false) reasons.add('target-inventory-unobserved');
