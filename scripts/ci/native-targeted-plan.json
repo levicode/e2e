@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "native": {
-    "commit": "d948b1eb368515dbe7f133872e73fb489829a13e",
-    "tree": "6af7f5799b9b80a2c7ef5ae7fbfc2359ee85ed17",
+    "commit": "d0f9fc88ef1de569a262da2166c6086d81d1ea47",
+    "tree": "30310a454493025ecd3c1d1a08702ad144f72c56",
     "lockSHA256": "5aa88b1ba882a33ccbfebe9bac5ef2c3b856130de6b684737c7060a80e4020a0"
   },
   "required": [
@@ -328,7 +328,8 @@
     "native::client_geometry::tests::empty_box_detects_zero_area_owner_boxes",
     "native::client_enrollment::tests::auxiliary_page_level_kinds_are_central",
     "native::client_enrollment::tests::auxiliary_worker_and_ui_targets_never_move_the_document_epoch",
-    "native::client_enrollment::tests::auxiliary_session_event_errors_are_local"
+    "native::client_enrollment::tests::auxiliary_session_event_errors_are_local",
+    "native::client_targets::owned_inventory_diagnostic_opt_in_tests::page_read_admits_with_browser_ui_and_a_starting_service_worker"
   ],
   "features": [],
   "purpose": "targeted-native-regression-not-full-acceptance",
