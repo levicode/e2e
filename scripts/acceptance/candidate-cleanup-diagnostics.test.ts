@@ -90,6 +90,23 @@ test('a read cleanup cause is optional, closed, and never inferred', () => {
   for (const cause of ['read-settlement', 'group-release', 'object-group-release', 'owner-release']) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), true);
   for (const cause of ['private', 'cleanup-failed', true, 1, null]) assert.equal(validCleanupRecord(screenshot(1, { readCleanupCause: cause })), false);
 });
+test('an initial frame refusal class is optional, closed, and never claims a revision fence', () => {
+  assert.equal(validCleanupRecord(screenshot(1)), true);
+  for (const refusal of ['frame-topology', 'target-unregistered', 'frame-binding']) assert.equal(validCleanupRecord(screenshot(1, { screenshotStage: 'initial-frames', capturePhase: 'not-entered', frameRefusal: refusal })), true);
+  for (const refusal of ['private', true, 1, null]) assert.equal(validCleanupRecord(screenshot(1, { frameRefusal: refusal })), false);
+  assert.equal(validCleanupRecord(screenshot(1, { frameRefusal: 'revision' })), true);
+  assert.equal(validCleanupRecord(screenshot(1, { screenshotStage: 'initial-frames', capturePhase: 'not-entered', frameRefusal: 'revision' })), false);
+});
+function stateCaptureFailure(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('StateCaptureFailure', ordinal, { generation: 1, stateCapturePhase: 'export', error: 'stale-scope', ...facts });
+}
+test('a state.capture refusal names its closed phase', () => {
+  assert.equal(validCleanupRecord(stateCaptureFailure(1)), true);
+  for (const phase of ['pre-attestation', 'export', 'post-attestation']) assert.equal(validCleanupRecord(stateCaptureFailure(1, { stateCapturePhase: phase })), true);
+  for (const facts of [{ stateCapturePhase: 'private' }, { stateCapturePhase: true }, { error: 'private' }, { operationSeq: 0 }, { url: 'private' }]) assert.equal(validCleanupRecord(stateCaptureFailure(1, facts)), false);
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), stateCaptureFailure(2, { error: 'stale-scope' }), record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+});
 function isolation(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('ScopeIsolation', ordinal, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0), ...facts });
 }

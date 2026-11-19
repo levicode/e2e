@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "36abb693f11df5e78caa96fb744e1035e4b406b5",
+  "nativeCommit": "4326b3df6b03fb057512024b06ad542b9f2ea000",
   "required": [
     "schemaVersion",
     "source",
@@ -65,7 +65,8 @@
         "ObserveInitialAcquisition",
         "ScopeIsolation",
         "NetworkCallbackFailure",
-        "ActionFailure"
+        "ActionFailure",
+        "StateCaptureFailure"
       ]
     },
     "droppedBefore": {
@@ -1298,6 +1299,21 @@
         "frame",
         "object",
         "node"
+      ]
+    },
+    "frameRefusal": {
+      "enum": [
+        "frame-topology",
+        "target-unregistered",
+        "frame-binding",
+        "revision"
+      ]
+    },
+    "stateCapturePhase": {
+      "enum": [
+        "pre-attestation",
+        "export",
+        "post-attestation"
       ]
     }
   }

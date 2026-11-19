@@ -13,7 +13,9 @@ const inventoryFields = ['generation', 'inventoryPoint', 'inventorySealed', 'inv
 const inventoryOptionalFields = ['inventorySealCause'];
 const inventorySealCauses = new Set(['explicit', 'dispatch-cleanup', 'publish-handles', 'shutdown', 'close', 'restart', 'network', 'capture', 'operation-state', 'retained-deadline', 'retained-settlement', 'retained-completion']);
 const screenshotFields = ['generation', 'screenshotStage', 'capturePhase', 'inventoryAfterFailure', 'error'];
-const screenshotOptionalFields = ['readCleanupCause'];
+const screenshotOptionalFields = ['readCleanupCause', 'frameRefusal'];
+const frameRefusals = new Set(['frame-topology', 'target-unregistered', 'frame-binding', 'revision']);
+const stateCapturePhases = new Set(['pre-attestation', 'export', 'post-attestation']);
 const readCleanupCauses = new Set(['read-settlement', 'group-release', 'object-group-release', 'owner-release']);
 const frameFields = ['generation', 'pass', 'sealed', 'revisionMismatch', 'reservations', 'exact', 'lastEvent', 'lastTarget'];
 const revisionEvents = ['attach', 'detach', 'info', 'navigate', 'same-document', 'frame-detach', 'unknown'];
@@ -74,15 +76,16 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const isolation = phase === 'ScopeIsolation';
   const callbackFailure = phase === 'NetworkCallbackFailure';
   const actionFailure = phase === 'ActionFailure';
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && !callbackFailure && !actionFailure && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : []), ...(callbackFailure ? ['networkCommand', 'networkFailure'] : []), ...(actionFailure ? ['actionKind', 'actionStage', 'effects', 'error'] : [])];
+  const stateCapture = phase === 'StateCaptureFailure';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && !callbackFailure && !actionFailure && !stateCapture && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : []), ...(callbackFailure ? ['networkCommand', 'networkFailure'] : []), ...(actionFailure ? ['actionKind', 'actionStage', 'effects', 'error'] : []), ...(stateCapture ? ['generation', 'stateCapturePhase', 'error'] : [])];
   const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : []), ...(callbackFailure ? ['networkStaleObject', 'networkReservation', 'networkLedgerError', 'networkCapacity', 'networkCapacityCount', 'networkCapacityLimit', 'networkCapacityBytes', 'networkCapacityBytesLimit'] : []), ...(actionFailure ? ['actionCdpMethod', 'actionCdpFailure', 'actionStaleObject'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   if (inventory && Object.hasOwn(item, 'inventorySealCause') && (typeof item.inventorySealCause !== 'string' || !inventorySealCauses.has(item.inventorySealCause))) return false;
-  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker ? ['generation'] : [])]) if (!natural(item[key])) return false;
+  for (const key of ['record', 'operationSeq', 'droppedBefore', 'emittedBefore', 'suppressedBefore', ...(lifecycle ? ['generation', 'cleanupOwner', 'cleanupAttempt'] : inventory || screenshot || frame || readonly || target || worker || stateCapture ? ['generation'] : [])]) if (!natural(item[key])) return false;
   if (lifecycle && (item.cleanupOwner === 0 || item.cleanupAttempt === 0)) return false;
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !isolation && !actionFailure && item.operationSeq !== 0) return false;
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !isolation && !actionFailure && !stateCapture && item.operationSeq !== 0) return false;
   if (terminal && (item.operationSeq !== 0 || typeof item.terminalCleanupStage !== 'string' || !terminalStages.has(item.terminalCleanupStage) || typeof item.terminalCleanupOk !== 'boolean')) return false;
   if (worker) {
     if (item.operationSeq !== 0 || !natural(item.workerOrdinal) || item.workerOrdinal < 1 || item.workerOrdinal > 8) return false;
@@ -134,6 +137,13 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     if (typeof item.capturePhase !== 'string' || !capturePhases.has(item.capturePhase)) return false;
     if (item.screenshotStage !== 'capture' && item.capturePhase !== 'not-entered') return false;
     if (typeof item.inventoryAfterFailure !== 'string' || !['not-sampled', 'unavailable', 'unchanged', 'changed'].includes(item.inventoryAfterFailure)) return false;
+    if (typeof item.error !== 'string' || !errors.has(item.error)) return false;
+    if (Object.hasOwn(item, 'frameRefusal') && (typeof item.frameRefusal !== 'string' || !frameRefusals.has(item.frameRefusal))) return false;
+    if (item.screenshotStage === 'initial-frames' && Object.hasOwn(item, 'frameRefusal') && item.frameRefusal === 'revision') return false;
+  }
+  if (stateCapture) {
+    if (item.operationSeq === 0) return false;
+    if (typeof item.stateCapturePhase !== 'string' || !stateCapturePhases.has(item.stateCapturePhase)) return false;
     if (typeof item.error !== 'string' || !errors.has(item.error)) return false;
   }
   if (inventory) {
@@ -251,7 +261,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
       if (!value.exact) reasons.add('frame-inventory-inexact');
       continue; // Atomic rejection evidence, never cleanup coverage or case association.
     }
-    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation' || value.phase === 'NetworkCallbackFailure' || value.phase === 'ActionFailure') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
+    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation' || value.phase === 'NetworkCallbackFailure' || value.phase === 'ActionFailure' || value.phase === 'StateCaptureFailure') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
     if (value.phase === 'InventorySnapshot' || Object.hasOwn(targetFields, value.phase as string)) {
       if (value.phase === 'TargetObservationLost') reasons.add('target-observation-lost');
       if (value.targetObserved === false) reasons.add('target-inventory-unobserved');
