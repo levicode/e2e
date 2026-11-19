@@ -125,6 +125,62 @@ test('falls back to a tree-only observation after a completed pixel stale-refere
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
+test.each([false, true])('recovers an undispatched tree fallback with the same options and deadline (continuation %s)', async continued => {
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    count++;
+    if (count === 2) return { error: 'stale-reference', effects: 'completed' };
+    if (count === 3) return continued ? refusal(frame) : { error: 'stale-scope' };
+    return { data: snapshot() };
+  });
+  try {
+    await engine.observe!(operation());
+    await expect(engine.observe!(operation(), { pixels: true })).resolves.toMatchObject({ identityScope: 'scope-1' });
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(4);
+    const [, pixel, tree, recovered] = calls;
+    expect(tree!.args['options']).toEqual({ pixels: false });
+    expect(recovered!.args).toEqual(continued ? { ...tree!.args, continuation: receipt(tree!.operationSeq) } : tree!.args);
+    expect(recovered!.operationSeq).toBeGreaterThan(tree!.operationSeq);
+    expect(recovered!.timeoutMs).toBeLessThanOrEqual(tree!.timeoutMs!);
+    expect(tree!.timeoutMs).toBeLessThanOrEqual(pixel!.timeoutMs!);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test.each([
+  { effects: 'not-dispatched', scopeState: 'usable', calls: 3 },
+  { effects: 'completed', scopeState: 'usable', calls: 2 },
+  { effects: 'unknown', scopeState: 'quarantined', calls: 2 },
+] as const)('bounds failed tree fallback recovery ($effects, $scopeState)', async ({ effects, scopeState, calls }) => {
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    if (++count === 1) return { error: 'stale-reference', effects: 'completed' };
+    return { error: 'stale-scope', effects, scopeState };
+  });
+  try {
+    await expect(engine.observe!(operation(), { pixels: true })).rejects.toBeInstanceOf(Error);
+    expect(peer!.requests.filter(frame => frame.command === 'browser.observe')).toHaveLength(calls);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test('keeps the remaining observation budget when reacquiring a tree fallback', async () => {
+  let remaining = 1000;
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    if (++count === 1) return { error: 'stale-reference', effects: 'completed' };
+    remaining = 25;
+    return { error: 'stale-scope' };
+  });
+  try {
+    await expect(engine.observe!({ ...operation(), get timeoutMs() { return remaining; } }, { pixels: true }))
+      .rejects.toMatchObject({ code: 'OPERATION_TIMEOUT' });
+    expect(count).toBe(2);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
 test('never retries an unproven pixel stale-reference', async () => {
   for (const effects of ['unknown', 'not-dispatched'] as const) {
     const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-reference', effects } : undefined);
