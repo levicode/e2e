@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "03beebfc0d02e594f933aa3223079cb1c8318a45",
+  "nativeCommit": "d65e33ba3c9db8fb21677f46d39b695705a77c3b",
   "required": [
     "schemaVersion",
     "source",
@@ -63,7 +63,8 @@
         "CaptureStarted",
         "CaptureLimitReached",
         "ObserveInitialAcquisition",
-        "ScopeIsolation"
+        "ScopeIsolation",
+        "NetworkCallbackFailure"
       ]
     },
     "droppedBefore": {
@@ -832,6 +833,78 @@
         "session-quarantine",
         "session-cancel"
       ]
+    },
+    "networkCommand": {
+      "enum": [
+        "other",
+        "continue-request",
+        "fulfill-request",
+        "fail-request",
+        "continue-with-auth",
+        "handle-dialog"
+      ]
+    },
+    "networkFailure": {
+      "enum": [
+        "reservation-rejected",
+        "envelope-mismatch",
+        "submit-failed",
+        "error-ack",
+        "interception-gone",
+        "local-failure",
+        "channel-closed",
+        "deadline",
+        "canceled"
+      ]
+    },
+    "networkReservation": {
+      "enum": [
+        "owner-changed",
+        "owner-required",
+        "ledger"
+      ]
+    },
+    "networkLedgerError": {
+      "enum": [
+            "invalid-frame",
+            "unsupported-protocol",
+            "unsupported-capability",
+            "stale-generation",
+            "scope-unavailable",
+            "sequence-reused",
+            "invalid-sequence",
+            "invalid-timeout",
+            "capacity-exceeded",
+            "operation-missing",
+            "decision-missing",
+            "decision-expired",
+            "decision-kind-mismatch",
+            "registry-missing",
+            "registry-in-use",
+            "identifier-exhausted",
+            "unsupported-command",
+            "deadline-exceeded",
+            "cancelled",
+            "invalid-arguments",
+            "invalid-locator",
+            "browser-failure",
+            "stale-scope",
+            "cleanup-failed",
+            "stale-reference",
+            "policy-denied",
+            "not-actionable",
+            "locator-not-found",
+            "content-length-mismatch",
+            "redirect-body-unavailable",
+            "intercepted-pointer",
+            "checked-state-unchanged",
+            "checked-control-replaced",
+            "fill-unsupported-target",
+            "no-editable-focus",
+            "tap-target-replaced-before-press",
+            "frame-not-found",
+            "frame-ambiguous"
+    ]
     },
     "isolationFile": {
       "enum": [

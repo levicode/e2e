@@ -93,6 +93,16 @@ test('a read cleanup cause is optional, closed, and never inferred', () => {
 function isolation(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('ScopeIsolation', ordinal, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0), ...facts });
 }
+function callbackFailure(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('NetworkCallbackFailure', ordinal, { operationSeq: 0, networkCommand: 'continue-request', networkFailure: 'error-ack', ...facts });
+}
+test('a callback command failure names its command and closed failure class', () => {
+  assert.equal(validCleanupRecord(callbackFailure(1)), true);
+  for (const facts of [{ networkCommand: 'Fetch.continueRequest' }, { networkCommand: 'other', networkFailure: 'cdp-error' }, { networkFailure: 'timeout' }, { networkCommand: 'continue-request', networkReservation: 'owner-lost' }, { networkCommand: 'continue-request', networkLedgerError: 'private' }, { networkCommand: undefined }, { operationSeq: 7 }, { url: 'private' }]) assert.equal(validCleanupRecord(callbackFailure(1, facts)), false);
+  assert.equal(validCleanupRecord(callbackFailure(1, { networkFailure: 'reservation-rejected', networkReservation: 'ledger', networkLedgerError: 'stale-scope' })), true);
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), callbackFailure(2), record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+});
 test('scope isolation names its layer, caller and cause in a closed record', () => {
   assert.equal(validCleanupRecord(isolation(1)), true);
   for (const reason of ['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']) assert.equal(validCleanupRecord(isolation(1, { isolationReason: reason })), true);
