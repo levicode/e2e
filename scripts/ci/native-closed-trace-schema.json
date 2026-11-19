@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "67901bff69b61d861c5ab80d9d126b8b00525086",
+  "nativeCommit": "36abb693f11df5e78caa96fb744e1035e4b406b5",
   "required": [
     "schemaVersion",
     "source",
@@ -64,7 +64,8 @@
         "CaptureLimitReached",
         "ObserveInitialAcquisition",
         "ScopeIsolation",
-        "NetworkCallbackFailure"
+        "NetworkCallbackFailure",
+        "ActionFailure"
       ]
     },
     "droppedBefore": {
@@ -1221,6 +1222,83 @@
     },
     "networkCapacityBytesLimit": {
       "int": 4294967295
+    },
+    "actionKind": {
+      "enum": [
+        "unknown",
+        "tap",
+        "double-tap",
+        "secondary-tap",
+        "long-press",
+        "hover",
+        "swipe",
+        "scroll-into-view",
+        "focus",
+        "press",
+        "fill",
+        "clear",
+        "select-option",
+        "check",
+        "uncheck",
+        "drag-to",
+        "set-input-files"
+      ]
+    },
+    "actionStage": {
+      "enum": [
+        "unknown",
+        "locate",
+        "frame-owner",
+        "visibility",
+        "scroll",
+        "geometry",
+        "box-model",
+        "reachability",
+        "input",
+        "upload",
+        "keyboard",
+        "settle"
+      ]
+    },
+    "actionCdpMethod": {
+      "enum": [
+        "other",
+        "page-create-isolated-world",
+        "page-get-frame-tree",
+        "page-get-layout-metrics",
+        "dom-resolve-node",
+        "runtime-call-function-on",
+        "runtime-evaluate",
+        "runtime-release-object",
+        "dom-get-box-model",
+        "dom-scroll-into-view-if-needed",
+        "input-dispatch-mouse-event",
+        "input-dispatch-key-event",
+        "input-insert-text"
+      ]
+    },
+    "actionCdpFailure": {
+      "enum": [
+        "remote-error",
+        "admission-refused",
+        "admission-revoked",
+        "owner-changed",
+        "owner-required",
+        "channel-closed",
+        "deadline",
+        "local-failure",
+        "other",
+        "missing-reply",
+        "exception"
+      ]
+    },
+    "actionStaleObject": {
+      "enum": [
+        "session",
+        "frame",
+        "object",
+        "node"
+      ]
     }
   }
 }
