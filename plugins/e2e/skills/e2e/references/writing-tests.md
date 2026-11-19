@@ -295,6 +295,8 @@ presence, `toHaveAttribute(name, value)` the value; `toBeAttached` waits for
 a match, hidden or not; `toHaveClass` compares the whole normalized class
 list or tests a RegExp. A failed matcher is `ASSERTION_FAILED`, exit code 1.
 
+支持字段读取的 fixture 引擎可直接采样单节点的文字、值和可访问名称。这些断言无需生成坐标或操作引用。
+
 Playwright's `{ checked: false }`, `{ enabled: false }`, `{ visible: false }`,
 and `{ attached: false }` flip their matchers, and `{ ignoreCase: true }`
 works on `toHaveText`, `toContainText`, `toHaveAccessibleName`,

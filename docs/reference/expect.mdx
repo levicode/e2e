@@ -166,6 +166,8 @@ exists, so `not.toContainText(['Deleted'])` fails while any match contains
 
 #### `toHaveValue`
 
+支持字段读取的 fixture 引擎会直接采样输入值、文字或可访问名称，使这些单节点断言无需生成坐标或操作引用。读取受保护输入框的值或文字仍会被拒绝。
+
 Waits for a form control's value, compared as it is.
 
 ```ts

@@ -41,10 +41,10 @@ export function takeObservationContinuation(cause: unknown): ObserveContinuation
   return continuation;
 }
 
-const cleanObservationRefusals = new WeakSet<EngineError | TestError>();
-/** A read-only refusal that native proved undispatched on a usable scope: one fresh retry is safe. */
-export function isCleanObservationRefusal(cause: unknown): boolean {
-  return (cause instanceof EngineError || cause instanceof TestError) && cleanObservationRefusals.has(cause);
+const cleanReadRefusals = new WeakSet<EngineError | TestError>();
+/** A fresh read is safe only after native reports an undispatched refusal on a usable scope. */
+export function isCleanReadRefusal(cause: unknown): boolean {
+  return (cause instanceof EngineError || cause instanceof TestError) && cleanReadRefusals.has(cause);
 }
 
 const pixelStaleObservations = new WeakSet<EngineError | TestError>();
@@ -125,14 +125,12 @@ export class EngineChannel {
         frameDiagnostic = { selector, index: facts.index, count: facts.count };
       }
       const cause = resultError(result, actionKind === 'check' || actionKind === 'uncheck' ? actionKind : undefined, diagnostic, frameDiagnostic, actionContext);
-      // A same-document navigation can move the page inventory between admission
-      // and the first read. Native proves the refusal had no effects and the scope
-      // is still usable; one fresh capture is safe. An unproven/unknown outcome is
-      // never admitted here, and a second refusal is returned to the caller.
-      if ((name === 'browser.observe' || name === 'capture.screenshot')
+      // Frame enrollment can overtake either the protected read or the state
+      // attestation. Only a settled read refusal can authorize reacquisition.
+      if ((name === 'browser.observe' || name === 'capture.screenshot' || name === 'state.capture')
         && result.error?.code === 'stale-scope' && result.effects === 'not-dispatched' && result.scopeState === 'usable'
         && result.observeContinuation === undefined) {
-        cleanObservationRefusals.add(cause);
+        cleanReadRefusals.add(cause);
       }
       if (name === 'browser.observe' && result.error?.code === 'stale-reference'
         && result.effects === 'completed' && result.scopeState === 'usable'

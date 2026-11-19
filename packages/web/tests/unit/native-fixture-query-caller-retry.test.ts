@@ -55,20 +55,22 @@ async function fixture(mode: Mode) {
       if (call.command === 'session.environment') return { data: { identityScope: scope, browser: 'synthetic' } };
       if (call.command === 'page.title') return { data: { title: 'synthetic' } };
       if (call.command === 'recording.finalized.collect') return { error: 'scope-unavailable', effects: 'not-dispatched', scopeState: 'quarantined' };
-      if (call.command === 'fixture.query' || call.command === 'browser.query') {
+      if (call.command === 'fixture.query') {
+        expect(call.args['expression']).toMatchObject({ kind: 'query', query: { kind: 'role', value: { value: 'button' } } });
+        return { data: { identityScope: scope, revision: '1', nodes: [{ ref: { id: '@e1', revision: '1' }, role: 'button', name: 'Sign in' }] } };
+      }
+      if (call.command === 'fixture.read-fields') {
         const expression = call.args['expression'];
-        expect(expression).toMatchObject({ kind: 'query', query: { kind: 'role' } });
-        const role = (expression as { query: { value: { value: string } } }).query.value.value;
-        if (role === 'button') return { data: { identityScope: scope, revision: '1', nodes: [{ ref: { id: '@e1', revision: '1' }, role: 'button', name: 'Sign in' }] } };
-        expect(role).toBe('alert'); expect(submitted).toBe(1);
-        expect(call.command).toBe('fixture.query');
+        expect(expression).toMatchObject({ kind: 'query', query: { kind: 'role', value: { value: 'alert' } } });
+        expect(call.args['fields']).toEqual(['text']);
+        expect(submitted).toBe(1);
         queries.push({ request: call, at: Date.now(), monotonicAt: performance.now() });
         if (queries.length === 1) {
           await new Promise<void>(resolve => setTimeout(resolve, pauseMs));
           return { error: 'stale-reference', effects: mode === 'unknown-query' ? 'unknown' : mode === 'completed-query' ? 'completed' : 'not-dispatched', scopeState: mode === 'unknown-query' ? 'quarantined' : 'usable' };
         }
         expect(mode).toBe('clean-query'); expect(queries).toHaveLength(2);
-        return { data: { identityScope: scope, revision: '2', nodes: [{ ref: { id: '@e2', revision: '2' }, role: 'alert', name: 'Invalid credentials', text: 'Invalid credentials' }] } };
+        return { data: { identityScope: scope, values: [{ text: 'Invalid credentials', states: { secure: false } }] } };
       }
       if (call.command === 'browser.perform') {
         expect(call.args).toMatchObject({ identityScope: scope, action: { kind: 'tap' } });
@@ -105,7 +107,7 @@ it('retries one clean native stale query through the original scalar assertion, 
   expect(mapped).toHaveLength(1);
   expect(mapped[0]).toMatchObject({ code: 'NODE_STALE', retryable: true });
   expect(f.queries).toHaveLength(2); expect(f.submitted()).toBe(1);
-  expect(peer!.requests.slice(before).map(request => request.command)).toEqual(['fixture.query', 'fixture.query']);
+  expect(peer!.requests.slice(before).map(request => request.command)).toEqual(['fixture.read-fields', 'fixture.read-fields']);
   const requests = f.queries.map(call => call.request);
   expect(requests[0]!.operationSeq).toBeLessThan(requests[1]!.operationSeq);
   expect(new Set(requests.map(request => request.operationSeq)).size).toBe(2);
@@ -134,7 +136,7 @@ it.each(['unknown-query', 'completed-query'] as const)('%s cannot enter assertio
   expect(f.queries).toHaveLength(1); expect(f.submitted()).toBe(1);
   const tail = peer!.requests.slice(before);
   expect(tail.map(request => request.command)).toEqual(mode === 'unknown-query'
-    ? ['fixture.query', 'recording.finalized.collect'] : ['fixture.query']);
+    ? ['fixture.read-fields', 'recording.finalized.collect'] : ['fixture.read-fields']);
   if (mode === 'unknown-query') expectTerminalCollection(tail[0]!, tail[1]!);
 });
 

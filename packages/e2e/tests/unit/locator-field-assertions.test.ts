@@ -53,6 +53,25 @@ describe('reference-free fixture assertion samples', () => {
     expect(f.refCalls()).toEqual({ located: 0, read: 0 });
   });
 
+  it('reads fixture text, name and exact values without acquiring geometry', async () => {
+    const f = fixture(() => [{ role: 'textbox', text: 'Selected material', name: 'Search', value: ' 123 ', states: { secure: false } }]);
+    const search = f.screen.getByTestId('nickname');
+    await expectFixture(search).toHaveValue(' 123 ');
+    await expectFixture(search).toHaveText('Selected material');
+    await expectFixture(search).toContainText('material');
+    await expectFixture(search).toHaveAccessibleName('Search');
+    expect(f.calls.map(call => call.fields)).toEqual([['value', 'role'], ['text'], ['text'], ['name']]);
+    expect(f.refCalls()).toEqual({ located: 0, read: 0 });
+  });
+
+  it('denies value and text assertions on secure fixture field samples', async () => {
+    const f = fixture(() => [{ role: 'textbox', states: { secure: true } }]);
+    const search = f.screen.getByTestId('nickname');
+    await expect(expectFixture(search).not.toHaveValue('other')).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    await expect(expectFixture(search).toContainText('other')).rejects.toMatchObject({ code: 'POLICY_DENIED' });
+    expect(f.refCalls()).toEqual({ located: 0, read: 0 });
+  });
+
   it('keeps ambiguity, genuine zero matches and secure visibility', async () => {
     const multiple = fixture(() => [{ states: {} }, { states: {} }]);
     await expect(multiple.engine.tryReadFields(expression, ['states'], new Deadline(100), 'empty')).rejects.toMatchObject({ code: 'LOCATOR_AMBIGUOUS' });
