@@ -38,6 +38,11 @@ const targetEnums: Record<string, readonly string[]> = {
   targetStage: ['registered', 'configure-started', 'configure-ack', 'configure-failed', 'resumed', 'detached', 'restart-retiring', 'purpose-assigned'],
 };
 const isolationLayers = new Set(['target-seal', 'enrollment-poison', 'retention-producer', 'session-quarantine', 'session-cancel']);
+const networkCommands = new Set(['other', 'continue-request', 'fulfill-request', 'fail-request', 'continue-with-auth', 'handle-dialog']);
+const networkFailures = new Set(['reservation-rejected', 'envelope-mismatch', 'submit-failed', 'error-ack', 'interception-gone', 'local-failure', 'initialization-cancelled', 'initialization-deadline', 'event-capacity', 'channel-closed', 'deadline']);
+const networkReservations = new Set(['owner-changed', 'owner-required', 'ledger']);
+const networkCapacities = new Set(['count', 'bytes', 'global']);
+const networkStaleObjects = new Set(['session', 'frame', 'object', 'node']);
 const isolationFiles = new Set(['other', 'client-actions', 'client-browser', 'client-capture', 'client-debt', 'client-enrollment', 'client-enrollment-page-query', 'client-interop-wire', 'client-network', 'client-observation-dispatch', 'client-operation-state', 'client-protected-read', 'client-restart', 'client-session', 'client-settlement-trace', 'client-state', 'client-state-dispatch', 'client-tasks', 'client-targets', 'client-transport', 'cdp-client']);
 const isolationReasons = new Set(['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']);
 const screenshotStages = new Set(['prepare-scope', 'prepare-permit', 'prepare-policy', 'prepare-owner', 'prepare-fence', 'run-scope', 'debt-admission', 'ui-admission', 'publication-admission', 'producer-reservation', 'initial-frames', 'frame-inventory-fence', 'protected-barrier', 'animation-stabilization', 'protected-frames', 'geometry', 'trace-metadata', 'capture', 'restoration', 'final-geometry', 'final-barrier', 'final-frames', 'final-viewport', 'blob-publication', 'publication']);
@@ -62,9 +67,10 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const worker = phase === 'ServiceWorkerAdmission';
   const terminal = phase === 'TerminalCleanupCheckpoint';
   const isolation = phase === 'ScopeIsolation';
-  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
-  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : [])];
-  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : [])]);
+  const callbackFailure = phase === 'NetworkCallbackFailure';
+  if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && !callbackFailure && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
+  const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : []), ...(callbackFailure ? ['networkCommand', 'networkFailure'] : [])];
+  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : []), ...(callbackFailure ? ['networkStaleObject', 'networkReservation', 'networkLedgerError', 'networkCapacity', 'networkCapacityCount', 'networkCapacityLimit', 'networkCapacityBytes', 'networkCapacityBytesLimit'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   if (inventory && Object.hasOwn(item, 'inventorySealCause') && (typeof item.inventorySealCause !== 'string' || !inventorySealCauses.has(item.inventorySealCause))) return false;
@@ -135,6 +141,15 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     if (typeof item.cleanupResult !== 'string' || !['passed', 'failed'].includes(item.cleanupResult)) return false;
     if (item.cleanupResult === 'passed' && Object.hasOwn(item, 'error')) return false;
     if (item.cleanupResult === 'failed' && (typeof item.error !== 'string' || !errors.has(item.error))) return false;
+  }
+  if (callbackFailure) {
+    if (typeof item.networkCommand !== 'string' || !networkCommands.has(item.networkCommand) || typeof item.networkFailure !== 'string' || !networkFailures.has(item.networkFailure)) return false;
+    if (Object.hasOwn(item, 'networkStaleObject') && (typeof item.networkStaleObject !== 'string' || !networkStaleObjects.has(item.networkStaleObject))) return false;
+    if (Object.hasOwn(item, 'networkReservation') && (typeof item.networkReservation !== 'string' || !networkReservations.has(item.networkReservation))) return false;
+    if (Object.hasOwn(item, 'networkLedgerError') && (typeof item.networkLedgerError !== 'string' || !errors.has(item.networkLedgerError))) return false;
+    if (Object.hasOwn(item, 'networkCapacity') && (typeof item.networkCapacity !== 'string' || !networkCapacities.has(item.networkCapacity))) return false;
+    for (const key of ['networkCapacityCount', 'networkCapacityLimit', 'networkCapacityBytes', 'networkCapacityBytesLimit']) if (Object.hasOwn(item, key) && (!natural(item[key]) || item[key] > 4_294_967_295)) return false;
+    if (Object.hasOwn(item, 'networkCapacity') !== Object.hasOwn(item, 'networkCapacityCount') || Object.hasOwn(item, 'networkCapacity') !== Object.hasOwn(item, 'networkCapacityLimit') || Object.hasOwn(item, 'networkCapacity') !== Object.hasOwn(item, 'networkCapacityBytes') || Object.hasOwn(item, 'networkCapacity') !== Object.hasOwn(item, 'networkCapacityBytesLimit')) return false;
   }
   if (isolation) {
     if (typeof item.isolationLayer !== 'string' || !isolationLayers.has(item.isolationLayer)) return false;
@@ -218,7 +233,7 @@ export function inspectCleanupBytes(bytes: Buffer) {
       if (!value.exact) reasons.add('frame-inventory-inexact');
       continue; // Atomic rejection evidence, never cleanup coverage or case association.
     }
-    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
+    if (value.phase === 'ScreenshotFirstFailure' || value.phase === 'ReadonlyPrepareFailure' || value.phase === 'ScopeIsolation' || value.phase === 'NetworkCallbackFailure') continue; // Not a cleanup lifecycle or atomic inventory snapshot.
     if (value.phase === 'InventorySnapshot' || Object.hasOwn(targetFields, value.phase as string)) {
       if (value.phase === 'TargetObservationLost') reasons.add('target-observation-lost');
       if (value.targetObserved === false) reasons.add('target-inventory-unobserved');

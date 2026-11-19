@@ -93,6 +93,20 @@ test('a read cleanup cause is optional, closed, and never inferred', () => {
 function isolation(ordinal: number, facts: Record<string, unknown> = {}) {
   return record('ScopeIsolation', ordinal, { isolationLayer: 'target-seal', isolationFile: 'client-browser', isolationLine: 3997, isolationReason: 'explicit', targetKinds: Array(12).fill(0), ...facts });
 }
+function callbackFailure(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('NetworkCallbackFailure', ordinal, { operationSeq: 0, networkCommand: 'continue-request', networkFailure: 'error-ack', ...facts });
+}
+test('a callback command failure names its command, closed class and gone object', () => {
+  assert.equal(validCleanupRecord(callbackFailure(1)), true);
+  for (const object of ['session', 'frame', 'object', 'node']) assert.equal(validCleanupRecord(callbackFailure(1, { networkStaleObject: object })), true);
+  assert.equal(validCleanupRecord(callbackFailure(1, { networkCommand: 'fail-request', networkFailure: 'reservation-rejected', networkReservation: 'ledger', networkLedgerError: 'stale-scope' })), true);
+  assert.equal(validCleanupRecord(callbackFailure(1, { networkFailure: 'reservation-rejected', networkReservation: 'ledger', networkLedgerError: 'capacity-exceeded', networkCapacity: 'count', networkCapacityCount: 32, networkCapacityLimit: 32, networkCapacityBytes: 9120, networkCapacityBytesLimit: 65536 })), true);
+  for (const reservation of ['owner-changed', 'owner-required', 'ledger']) assert.equal(validCleanupRecord(callbackFailure(1, { networkReservation: reservation })), true);
+  for (const failure of ['initialization-cancelled', 'initialization-deadline']) assert.equal(validCleanupRecord(callbackFailure(1, { networkFailure: failure })), true);
+  for (const facts of [{ networkCommand: 'Fetch.continueRequest' }, { networkCommand: 'other', networkFailure: 'cdp-error' }, { networkFailure: 'timeout' }, { networkCommand: undefined }, { networkStaleObject: 'page' }, { networkStaleObject: true }, { networkReservation: 'private' }, { networkReservation: true }, { networkLedgerError: 'private' }, { networkCapacity: 'private' }, { networkCapacity: 'count' }, { networkCapacity: 'count', networkCapacityCount: 1, networkCapacityLimit: 2, networkCapacityBytes: 3 }, { networkLedgerError: 'stale-scope', url: 'private' }, { operationSeq: 7 }, { url: 'private' }]) assert.equal(validCleanupRecord(callbackFailure(1, facts)), false);
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), callbackFailure(2, { networkFailure: 'local-failure', networkStaleObject: 'session' }), record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+});
 test('scope isolation names its layer, caller and cause in a closed record', () => {
   assert.equal(validCleanupRecord(isolation(1)), true);
   for (const reason of ['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']) assert.equal(validCleanupRecord(isolation(1, { isolationReason: reason })), true);
