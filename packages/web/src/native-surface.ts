@@ -1281,41 +1281,40 @@ export class NativeSurface implements NativeWebSurface {
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
     const epoch = attempt.epoch; const client = this.requireClient(); const publication = client.publicationCheckpoint();
     const args = { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR };
+    let readArgs = args;
+    const reacquire = async () => {
+      await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication);
+      return this.engineCommand('browser.observe', readArgs, operation);
+    };
     let snapshot;
-    try { snapshot = await this.engineCommand('browser.observe', args, operation); }
-    catch (cause) {
+    try {
+      try { snapshot = await this.engineCommand('browser.observe', args, operation); }
+      catch (cause) {
+        if (!isPixelStaleObservation(cause)) throw cause;
+        // Only the optional pixels lost their references. The tree-only read
+        // still needs the same settlement and ownership checks on refusal.
+        readArgs = { ...args, options: { ...options, pixels: false } };
+        snapshot = await reacquire();
+      }
+    } catch (cause) {
       const continuation = takeObservationContinuation(cause);
       if (continuation !== undefined) {
         // No generic retry: native minted this one-use authority only after clean settlement.
         this.assertObservationOwner(attempt, scope, epoch, client);
         this.assertPublication(client, publication); this.assertBudget(operation);
-        snapshot = await this.engineCommand('browser.observe', { ...args, continuation }, operation);
+        snapshot = await this.engineCommand('browser.observe', { ...readArgs, continuation }, operation);
       } else if (isCleanReadRefusal(cause)) {
-        const reacquire = async () => {
-          await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication);
-          return this.engineCommand('browser.observe', args, operation);
-        };
         try { snapshot = await reacquire(); }
         catch (second) {
           // The first document capture can race both frame discovery and the
           // later attach/resume boundary. After either clean refusal the next
           // native inventory waits for pending enrollment within this budget.
           const published = attempt.observationHighWater;
-          if ((published?.epoch === epoch && published.scope === scope && published.client === client)
+          if (readArgs !== args
+            || (published?.epoch === epoch && published.scope === scope && published.client === client)
             || !isCleanReadRefusal(second)) throw second;
           snapshot = await reacquire();
         }
-      } else if (isPixelStaleObservation(cause)) {
-        // The semantic prefix completed on a usable scope; only the optional
-        // masked pixels lost their refs during a same-document route change.
-        // A fresh tree-only capture keeps the screen usable and never exposes
-        // a partially completed pixel result.
-        this.assertObservationOwner(attempt, scope, epoch, client);
-        this.assertPublication(client, publication); this.assertBudget(operation);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        this.assertObservationOwner(attempt, scope, epoch, client);
-        this.assertPublication(client, publication); this.assertBudget(operation);
-        snapshot = await this.engineCommand('browser.observe', { ...args, options: { ...options, pixels: false } }, operation);
       } else throw cause;
     }
     this.assertObservationOwner(attempt, scope, epoch, client);
