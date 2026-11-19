@@ -86,7 +86,10 @@ it('preserves hit testing across a visible cross-site iframe', async () => {
     const snapshot = await fixture.engine.observe!(operation);
     const ref = buttonRef(snapshot.root, 'Main target');
     expect(ref).toBeDefined();
-    await expect(fixture.engine.perform!(ref!, { kind: 'tap' }, operation)).rejects.toThrow();
+    await expect(fixture.engine.perform!(ref!, { kind: 'tap' }, operation)).rejects.toMatchObject({
+      code: 'NOT_ACTIONABLE',
+      message: expect.stringContaining('another element intercepts pointer events'),
+    });
     await expect(fixture.browser.evaluate(() => document.querySelector('button')?.textContent ?? null)).resolves.toBe('Main target');
   } finally {
     await fixture.close();
