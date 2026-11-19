@@ -58,13 +58,54 @@ test('continues one clean native-fenced observation with a fresh sequence and un
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
-test('retries one clean stale-scope observation and returns the second refusal', async () => {
+test('reacquires the first observation after both clean startup races', async () => {
+  let count = 0;
+  const engine = await fixture(frame => frame.command === 'browser.observe'
+    ? ++count < 3 ? { error: 'stale-scope' } : { data: snapshot() }
+    : undefined);
+  try {
+    await expect(engine.observe!(operation())).resolves.toMatchObject({ identityScope: 'scope-1' });
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(3);
+    expect(calls.every(call => call.timeoutMs! <= calls[0]!.timeoutMs!)).toBe(true);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test('returns the second clean refusal after an observation has already published', async () => {
+  let count = 0;
+  const engine = await fixture(frame => frame.command === 'browser.observe'
+    ? ++count === 1 ? { data: snapshot() } : { error: 'stale-scope' }
+    : undefined);
+  try {
+    await engine.observe!(operation());
+    await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
+    expect(count).toBe(3);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test('bounds repeated clean startup refusals', async () => {
   const engine = await fixture(frame => frame.command === 'browser.observe' ? { error: 'stale-scope' } : undefined);
   try {
     await expect(engine.observe!(operation())).rejects.toMatchObject({ code: 'INVALID_STATE', retryable: false });
     const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     expect(calls[1]!.operationSeq).toBeGreaterThan(calls[0]!.operationSeq);
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
+test.each([
+  { effects: 'not-dispatched', scopeState: 'usable', calls: 2 },
+  { effects: 'unknown', scopeState: 'quarantined', calls: 1 },
+  { effects: 'not-dispatched', scopeState: 'quarantined', calls: 1 },
+] as const)('reacquires state only after a clean attestation refusal ($effects, $scopeState)', async ({ effects, scopeState, calls }) => {
+  const engine = await fixture(frame => frame.command === 'state.capture'
+    ? { error: 'stale-scope', effects, scopeState }
+    : undefined);
+  try {
+    await expect(engine.state!.capture(operation())).rejects.toBeInstanceOf(Error);
+    const requests = peer!.requests.filter(frame => frame.command === 'state.capture');
+    expect(requests).toHaveLength(calls);
+    expect(requests.every(request => request.timeoutMs! <= requests[0]!.timeoutMs!)).toBe(true);
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
