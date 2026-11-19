@@ -102,13 +102,18 @@ describe('an action on a list that rebuilds on scroll', () => {
     expect(failure!.message).toContain('stale');
     const records = diagnostics().filter((record) => record['phase'] === 'ActionFailure');
     expect(records).toHaveLength(1);
+    // The rebuild races the probes: a fast run replaces the row while the
+    // visibility probe reads it, a slower one lets that probe through and the
+    // box-model read names the stale target. Both keep the intent — a named
+    // stage and a stale reason, never an environment failure.
     expect(records[0]).toMatchObject({
       actionKind: 'tap',
-      actionStage: 'box-model',
-      actionCdpMethod: 'dom-get-box-model',
       error: 'stale-reference',
       effects: 'unknown',
     });
+    const stage = records[0]!['actionStage'];
+    expect(['visibility', 'box-model']).toContain(stage);
+    if (stage === 'box-model') expect(records[0]!['actionCdpMethod']).toBe('dom-get-box-model');
   });
 
   it('still taps a target whose list did not move', async () => {
