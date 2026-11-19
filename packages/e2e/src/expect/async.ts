@@ -293,6 +293,7 @@ class AsyncExpectationImpl implements AsyncExpectation {
     return this.poll(
       {
         name,
+        fields: def.field === 'value' ? ['value', 'role'] : [def.field],
         readsWithheld: def.field !== 'name',
         evaluableNode: (node) => readField(def, node) !== undefined,
         predicate: (sample) => {
