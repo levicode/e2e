@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "nativeCommit": "36abb693f11df5e78caa96fb744e1035e4b406b5",
+  "nativeCommit": "de95afadcd0d19b76915fe5264a0ba083f4b3020",
   "required": [
     "schemaVersion",
     "source",
@@ -1247,6 +1247,10 @@
     "actionStage": {
       "enum": [
         "unknown",
+        "admission",
+        "frame-inventory",
+        "geometry-snapshot",
+        "reference-snapshot",
         "locate",
         "frame-owner",
         "visibility",
@@ -1258,6 +1262,31 @@
         "upload",
         "keyboard",
         "settle"
+      ]
+    },
+    "actionPreflightReason": {
+      "enum": [
+        "frame-topology",
+        "frame-target-unenrolled",
+        "frame-binding",
+        "frame-cancelled",
+        "frame-deadline",
+        "frame-cleanup",
+        "frame-read",
+        "geometry-invalid",
+        "geometry-incomplete",
+        "geometry-stale",
+        "geometry-cancelled",
+        "geometry-superseded",
+        "geometry-deadline",
+        "geometry-backend",
+        "geometry-cleanup",
+        "reference-unavailable",
+        "reference-stale",
+        "reference-cancelled",
+        "reference-deadline",
+        "reference-publication",
+        "reference-failed"
       ]
     },
     "actionCdpMethod": {

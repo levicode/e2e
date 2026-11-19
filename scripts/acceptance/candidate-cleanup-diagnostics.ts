@@ -44,7 +44,9 @@ const networkReservations = new Set(['owner-changed', 'owner-required', 'ledger'
 const networkCapacities = new Set(['count', 'bytes', 'global']);
 const networkStaleObjects = new Set(['session', 'frame', 'object', 'node']);
 const actionKinds = new Set(['unknown', 'tap', 'double-tap', 'secondary-tap', 'long-press', 'hover', 'swipe', 'scroll-into-view', 'focus', 'press', 'fill', 'clear', 'select-option', 'check', 'uncheck', 'drag-to', 'set-input-files']);
-const actionStages = new Set(['unknown', 'locate', 'frame-owner', 'visibility', 'scroll', 'geometry', 'box-model', 'reachability', 'input', 'upload', 'keyboard', 'settle']);
+const actionStages = new Set(['unknown', 'admission', 'frame-inventory', 'geometry-snapshot', 'reference-snapshot', 'locate', 'frame-owner', 'visibility', 'scroll', 'geometry', 'box-model', 'reachability', 'input', 'upload', 'keyboard', 'settle']);
+const actionPreflightStages = new Set(['frame-inventory', 'geometry-snapshot', 'reference-snapshot']);
+const actionPreflightReasons = new Set(['frame-topology', 'frame-target-unenrolled', 'frame-binding', 'frame-cancelled', 'frame-deadline', 'frame-cleanup', 'frame-read', 'geometry-invalid', 'geometry-incomplete', 'geometry-stale', 'geometry-cancelled', 'geometry-superseded', 'geometry-deadline', 'geometry-backend', 'geometry-cleanup', 'reference-unavailable', 'reference-stale', 'reference-cancelled', 'reference-deadline', 'reference-publication', 'reference-failed']);
 const actionMethods = new Set(['other', 'page-create-isolated-world', 'page-get-frame-tree', 'page-get-layout-metrics', 'dom-resolve-node', 'runtime-call-function-on', 'runtime-evaluate', 'runtime-release-object', 'dom-get-box-model', 'dom-scroll-into-view-if-needed', 'input-dispatch-mouse-event', 'input-dispatch-key-event', 'input-insert-text']);
 const actionFailures = new Set(['remote-error', 'admission-refused', 'admission-revoked', 'owner-changed', 'owner-required', 'channel-closed', 'deadline', 'local-failure', 'other', 'missing-reply', 'exception']);
 const actionStaleObjects = new Set(['session', 'frame', 'object', 'node']);
@@ -76,7 +78,7 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
   const actionFailure = phase === 'ActionFailure';
   if (!lifecycle && !inventory && !screenshot && !frame && !readonly && !target && !worker && !terminal && !isolation && !callbackFailure && !actionFailure && phase !== 'CaptureStarted' && phase !== 'CaptureLimitReached') return false;
   const required = [...common, ...(terminal ? ['terminalCleanupStage', 'terminalCleanupOk'] : []), ...(lifecycle ? identity : []), ...(inventory ? inventoryFields : []), ...(screenshot ? screenshotFields : []), ...(frame ? frameFields : []), ...(readonly ? readonlyFields : []), ...(worker ? workerFields : []), ...(targetFields[phase] ?? []), ...(phase === 'CleanupFirstFailure' ? ['cleanupComponent'] : []), ...(phase === 'CleanupResult' ? ['cleanupResult'] : []), ...(isolation ? ['isolationLayer', 'isolationFile', 'isolationLine', 'isolationReason'] : []), ...(callbackFailure ? ['networkCommand', 'networkFailure'] : []), ...(actionFailure ? ['actionKind', 'actionStage', 'effects', 'error'] : [])];
-  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : []), ...(callbackFailure ? ['networkStaleObject', 'networkReservation', 'networkLedgerError', 'networkCapacity', 'networkCapacityCount', 'networkCapacityLimit', 'networkCapacityBytes', 'networkCapacityBytesLimit'] : []), ...(actionFailure ? ['actionCdpMethod', 'actionCdpFailure', 'actionStaleObject'] : [])]);
+  const allowed = new Set([...required, ...(screenshot ? screenshotOptionalFields : []), ...(inventory ? inventoryOptionalFields : []), ...(frame ? ['delta', 'events'] : []), ...(['CleanupResult', 'TargetLifecycle'].includes(phase) ? ['error'] : []), ...(readonly ? ['ackUs', 'wakeUs', 'failUs'] : []), ...(inventory ? ['inventoryOrdinal'] : []), ...(phase === 'TargetAttribution' ? ['inventoryPoint', 'inventoryOrdinal'] : []), ...(isolation ? ['targetKinds', 'error', 'scopeState'] : []), ...(callbackFailure ? ['networkStaleObject', 'networkReservation', 'networkLedgerError', 'networkCapacity', 'networkCapacityCount', 'networkCapacityLimit', 'networkCapacityBytes', 'networkCapacityBytesLimit'] : []), ...(actionFailure ? ['actionCdpMethod', 'actionCdpFailure', 'actionStaleObject', 'actionPreflightReason'] : [])]);
   if (!required.every(key => Object.hasOwn(item, key)) || Object.keys(item).some(key => !allowed.has(key))) return false;
   if (screenshot && Object.hasOwn(item, 'readCleanupCause') && (typeof item.readCleanupCause !== 'string' || !readCleanupCauses.has(item.readCleanupCause))) return false;
   if (inventory && Object.hasOwn(item, 'inventorySealCause') && (typeof item.inventorySealCause !== 'string' || !inventorySealCauses.has(item.inventorySealCause))) return false;
@@ -168,6 +170,11 @@ export function validCleanupRecord(value: unknown): value is RecordValue {
     }
     if (Object.hasOwn(item, 'actionCdpFailure') !== Object.hasOwn(item, 'actionCdpMethod')) return false;
     if (Object.hasOwn(item, 'actionStaleObject') && item.actionCdpFailure !== 'remote-error') return false;
+    if (Object.hasOwn(item, 'actionPreflightReason')) {
+      if (typeof item.actionPreflightReason !== 'string' || !actionPreflightReasons.has(item.actionPreflightReason)) return false;
+      // A preflight reason is only meaningful on a preflight stage.
+      if (!actionPreflightStages.has(item.actionStage as string)) return false;
+    }
   }
   if (isolation) {
     if (typeof item.isolationLayer !== 'string' || !isolationLayers.has(item.isolationLayer)) return false;
