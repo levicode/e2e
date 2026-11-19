@@ -105,12 +105,16 @@ describe('a perform refused before the action context exists', () => {
     const records = entries(diagnosticsFile).filter((record) => record['phase'] === 'ActionFailure');
     const matching = records.filter((record) => record['operationSeq'] === receipt.operationSeq);
     expect(matching).toHaveLength(1);
+    // The native cause is `cancelled` when the engine's cancel wins the race
+    // and `deadline-exceeded` when the native deadline does. The client rewrites
+    // either clean non-dispatch to the caller's timeout reason, so the record
+    // may legitimately differ from the normalized receipt code.
     expect(matching[0]).toMatchObject({
       actionKind: 'tap',
       actionStage: 'frame-inventory',
-      error: receipt.code,
       effects: 'not-dispatched',
     });
+    expect(matching[0]!['error']).toMatch(/^(cancelled|deadline-exceeded)$/);
     expect(matching[0]!['actionPreflightReason']).toMatch(/^frame-/);
   }, 20_000);
 });
