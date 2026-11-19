@@ -107,6 +107,21 @@ test('a callback command failure names its command, closed class and gone object
   const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), callbackFailure(2, { networkFailure: 'local-failure', networkStaleObject: 'session' }), record('CleanupResult', 3, { cleanupResult: 'passed' })];
   assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
 });
+function actionFailure(ordinal: number, facts: Record<string, unknown> = {}) {
+  return record('ActionFailure', ordinal, { actionKind: 'tap', actionStage: 'box-model', effects: 'unknown', error: 'stale-reference', ...facts });
+}
+test('an action failure names its kind, stage and last command in closed fields', () => {
+  assert.equal(validCleanupRecord(actionFailure(1)), true);
+  assert.equal(validCleanupRecord(actionFailure(1, { actionCdpMethod: 'dom-get-box-model', actionCdpFailure: 'remote-error' })), true);
+  for (const stage of ['locate', 'frame-owner', 'visibility', 'scroll', 'geometry', 'box-model', 'reachability', 'input', 'upload', 'keyboard', 'settle']) assert.equal(validCleanupRecord(actionFailure(1, { actionStage: stage })), true);
+  for (const kind of ['tap', 'double-tap', 'secondary-tap', 'long-press', 'hover', 'swipe', 'scroll-into-view', 'focus', 'press', 'fill', 'clear', 'select-option', 'check', 'uncheck', 'drag-to', 'set-input-files']) assert.equal(validCleanupRecord(actionFailure(1, { actionKind: kind })), true);
+  for (const method of ['page-create-isolated-world', 'page-get-frame-tree', 'page-get-layout-metrics', 'dom-resolve-node', 'runtime-call-function-on', 'runtime-evaluate', 'runtime-release-object', 'dom-get-box-model', 'dom-scroll-into-view-if-needed', 'input-dispatch-mouse-event', 'input-dispatch-key-event', 'input-insert-text']) assert.equal(validCleanupRecord(actionFailure(1, { actionCdpMethod: method, actionCdpFailure: 'remote-error' })), true);
+  for (const failure of ['remote-error', 'admission-refused', 'admission-revoked', 'owner-changed', 'owner-required', 'channel-closed', 'deadline', 'local-failure', 'other', 'missing-reply', 'exception']) assert.equal(validCleanupRecord(actionFailure(1, { actionCdpMethod: 'other', actionCdpFailure: failure })), true);
+  for (const object of ['session', 'frame', 'object', 'node']) assert.equal(validCleanupRecord(actionFailure(1, { actionCdpMethod: 'dom-resolve-node', actionCdpFailure: 'remote-error', actionStaleObject: object })), true);
+  for (const facts of [{ actionKind: 'click' }, { actionStage: 'resolve' }, { effects: 'unknown-ish' }, { error: 'private' }, { actionCdpMethod: 'Fetch.continueRequest' }, { actionCdpFailure: 'cdp-error' }, { actionStaleObject: 'node' }, { actionCdpMethod: 'dom-resolve-node' }, { actionCdpFailure: 'remote-error', actionStaleObject: 'page' }, { operationSeq: 0 }, { url: 'private' }]) assert.equal(validCleanupRecord(actionFailure(1, facts)), false);
+  const values = [record('CaptureStarted', 0), record('CleanupStarted', 1), actionFailure(2, { actionCdpMethod: 'dom-get-box-model', actionCdpFailure: 'remote-error' }), record('CleanupResult', 3, { cleanupResult: 'passed' })];
+  assert.equal(inspectCleanupBytes(lines(...values)).status, 'complete-observed-snapshots');
+});
 test('scope isolation names its layer, caller and cause in a closed record', () => {
   assert.equal(validCleanupRecord(isolation(1)), true);
   for (const reason of ['explicit', 'failure', 'cleanup-failure', 'uncertain-outcome', 'capacity', 'terminal', 'owner-retirement', 'admission-closed', 'abandoned', 'resume-identity-mismatch', 'resume-permit-dropped', 'auxiliary-capacity', 'query-revision-exhausted', 'unknown-query-revision-exhausted', 'invalid-retirement-authority', 'auxiliary-ack-mismatch', 'auxiliary-abandoned', 'creation-abandoned', 'retained-deadline-seal', 'retained-settlement-seal', 'retained-completion-seal']) assert.equal(validCleanupRecord(isolation(1, { isolationReason: reason })), true);
