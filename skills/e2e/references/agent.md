@@ -175,6 +175,7 @@ closed an on-screen keyboard; on a touch screen that tap was often spent
 closing it, so act again.
 
 Web 的像素观察在已结算的引用过期时切换到纯树。若纯树观察因页面修订失效被拒绝，且原生回执确认未派发并保留可用会话，Web 引擎在原预算内续读一次。
+受保护的可选截图先核对 frame 清单，再暂停动画。iframe 入册使清单失效时，Web 只在原生确认未派发、会话可用且页面归属一致的情况下重新观察。
 
 ## assert, waitFor, extract: one question
 
