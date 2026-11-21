@@ -56,6 +56,36 @@ describe('retryingObserve', () => {
     expect(attempts).toBe(3);
   });
 
+  it.each([
+    { readMs: 17, error: 'NODE_STALE', paceStale: true, nextStart: 100 },
+    { readMs: 300, error: 'NODE_STALE', paceStale: true, nextStart: 300 },
+    { readMs: 300, error: 'NODE_STALE', paceStale: false, nextStart: 400 },
+    { readMs: 300, error: 'FRAME_NOT_FOUND', paceStale: true, nextStart: 400 },
+  ])('spaces reads after a $readMs ms $error with paceStale=$paceStale', async ({ readMs, error, paceStale, nextStart }) => {
+    vi.useFakeTimers();
+    vi.setTimerTickMode('nextTimerAsync');
+    const starts: number[] = [];
+    await retryingObserve({
+      observe: async () => {
+        starts.push(performance.now());
+        if (starts.length === 1) {
+          await new Promise<void>(resolve => setTimeout(resolve, readMs));
+          throw foreignEngineError(error, true);
+        }
+        return OBSERVATION;
+      },
+      operation,
+      guard: () => undefined,
+      signal: new AbortController().signal,
+      api: 'agent.act',
+      fallback: false,
+      tainted: () => false,
+      paceStale,
+    });
+    expect(starts).toHaveLength(2);
+    expect(starts[1]! - starts[0]!).toBe(nextStart);
+  });
+
   it('surfaces a non-retryable engine failure at once', async () => {
     let attempts = 0;
     await expect(

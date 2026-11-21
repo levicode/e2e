@@ -71,6 +71,29 @@ test('reacquires the first observation after both clean startup races', async ()
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
+test.each([1, 2])('lets native wait for enrollment after %i clean semantic refusals within the remaining budget', async refusals => {
+  let remaining = 1_000;
+  let observations = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    if (++observations <= refusals) {
+      remaining = 70;
+      return { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'usable' };
+    }
+    return { data: snapshot() };
+  });
+  try {
+    const result = await engine.observe!({ ...operation(), get timeoutMs() { return remaining; } }, { pixels: false });
+    expect(result.identityScope).toBe('scope-1');
+    const calls = peer!.requests.filter(frame => frame.command === 'browser.observe');
+    expect(calls).toHaveLength(refusals + 1);
+    for (const [i, retry] of calls.slice(1).entries()) {
+      expect(retry.timeoutMs).toBeLessThanOrEqual(remaining);
+      expect(retry.operationSeq).toBeGreaterThan(calls[i]!.operationSeq);
+    }
+  } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
+});
+
 test('returns the second clean refusal after an observation has already published', async () => {
   let count = 0;
   const engine = await fixture(frame => frame.command === 'browser.observe'

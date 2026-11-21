@@ -303,6 +303,19 @@ describe('createEngineSession', () => {
     expect(second.redaction).toEqual({ secureNodeCount: 0, maskedRegionCount: 0 });
   });
 
+  it('forwards the first explicit form sample to an engine that provides evidence on demand', async () => {
+    const engine = observingEngine({ observe: async (_operation, options) => ({
+      ...snapshot([node('n1', 'Submit')]),
+      ...(options?.sampleReplayForm ? { replayControls: { n1: {
+        kind: 'button' as const, owner: 'form', target: 'submit', stable: true,
+      } } } : {}),
+    }) });
+    const session = createEngineSession({ engine: defineEngine(engine), targetName: 'toy-target' });
+    expect((await session.observe(OP)).replayControls).toBeUndefined();
+    const sampled = await session.observe(OP, { sampleReplayForm: true });
+    expect(sampled.replayControls?.['n1']?.stable).toBe(true);
+  });
+
   it('routes every node action through perform and fails loud on undeclared members', async () => {
     const calls: string[] = [];
     const session = createEngineSession({

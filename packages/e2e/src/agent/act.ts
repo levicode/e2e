@@ -33,14 +33,37 @@ import type { AgentContext, AgentSelection } from './invocation.ts';
 import { projectPriorSteps, serializeLedger } from './ledger.ts';
 import { tokenUpperBound } from './model/adapter.ts';
 import { instantiateLanguageModel, isUnservedModelError, unservedModelError } from './model/sdk.ts';
-import type { AgentObservation } from './observation.ts';
-import { ObservationFeed } from './observation-feed.ts';
-import type { ObservedScreen } from './replay.ts';
+import type { AgentObservation, SemanticAgentObservation } from './observation.ts';
+import { ObservationFeed, type StabilitySample } from './observation-feed.ts';
+import type { ObservedScreen, SemanticScreen } from './replay.ts';
+import { adjacentFormOpening } from './replay-form.ts';
 import { appLocation } from '../cache/route.ts';
 import { OperationQueue } from './operation-queue.ts';
 import { StepAccounting } from './step-accounting.ts';
 import { failedStepOutcome, StepTraceSession, type StepCacheHost, type StepOutcome } from './step-cache.ts';
 import type { ParamTemplate } from '../cache/template.ts';
+
+interface ReplayHandoff {
+  readonly sample: StabilitySample;
+  readonly screen?: SemanticScreen;
+}
+
+const replaySamples = new WeakMap<AgentContext, ReplayHandoff & { index: number }>();
+
+/** A project evaluation bars shape-only reuse. Its successor can still
+ * compare a newly admitted whole screen and a newly verified receiver. */
+function takeReplaySample(runtime: AgentContext, stepIndex: number): (ReplayHandoff & { evaluated: boolean }) | undefined {
+  const previous = replaySamples.get(runtime);
+  replaySamples.delete(runtime);
+  if (previous === undefined || previous.index >= stepIndex) return undefined;
+  const completed = runtime.steps.completed();
+  if (completed.find(step => step.index === previous.index)?.status !== 'passed') return undefined;
+  const between = completed.filter(step => step.index > previous.index && step.index < stepIndex);
+  if (between.length !== stepIndex - previous.index - 1 ||
+      !between.every(step => step.status === 'passed' && ((step.kind === 'assertion' && step.api !== 'expect.poll') ||
+        step.api === 'browser.evaluate'))) return undefined;
+  return { ...previous, evaluated: between.some(step => step.api === 'browser.evaluate') };
+}
 
 /** What a dispatch needs of the agent a step runs with; an interactive step supplies its own. */
 export type DispatchAgent = Pick<AgentSelection, 'name' | 'config' | 'executor' | 'agentContext'>;
@@ -250,7 +273,7 @@ class ActDispatch {
     this.stepCache =
       cache === undefined
         ? undefined
-        : new StepTraceSession(this.cacheHost(), {
+        : new StepTraceSession(this.cacheHost(takeReplaySample(runtime, stepIndex)), {
             cache,
             instruction: spec.instruction,
             params: spec.params,
@@ -478,6 +501,14 @@ class ActDispatch {
     const { metrics } = this.accounting;
     const cacheInfo = this.stepCache?.cacheInfo;
     const latest = this.feed.latest;
+    if (cacheInfo?.mode === 'self-finalized') {
+      const sample = this.feed.stabilitySample();
+      if (sample !== undefined) {
+        const screen = latest?.kind === 'semantic' && latest.replayControls !== undefined
+          ? screenOf(latest, this.runtime.app.base?.origin) : undefined;
+        replaySamples.set(this.runtime, { index: this.stepIndex, sample, ...(screen === undefined ? {} : { screen }) });
+      }
+    }
     const model = this.accounting.modelInfo(this.agent.executor);
     this.runtime.steps.attachAgentDetails({
       metrics: { ...metrics },
@@ -499,11 +530,22 @@ class ActDispatch {
   }
 
   /** The cache session's narrow view of this step. */
-  private cacheHost(): StepCacheHost {
+  private cacheHost(prior: ReturnType<typeof takeReplaySample>): StepCacheHost {
     const feed = this.feed;
+    const origin = this.runtime.app.base?.origin;
+    let opening = true;
     return {
+      get currentScreen() {
+        const latest = feed.latest;
+        return latest?.kind === 'semantic' && !latest.treeTruncated ? screenOf(latest, origin) : undefined;
+      },
       get traceEligible() { return feed.traceEligible; },
-      observe: async (mode) => screenOf(await this.feed.probe(mode), this.runtime.app.base?.origin),
+      adjacentOpening: trace => prior?.evaluated && prior.screen ? adjacentFormOpening(prior.screen, trace, prior.sample.capturedAt) : undefined,
+      observe: async (mode, local) => {
+        const sample = opening && this.accounting.replayingTrace && !prior?.evaluated ? prior?.sample : undefined;
+        opening = false;
+        return screenOf(await feed.probe(mode, sample, local === undefined ? undefined : { match: value => local(screenOf(value, origin)), sampleControls: local.sampleControls === true, opening: local.opening === true, handoff: local.handoff === true }), origin);
+      },
       actions: this.dispatcher.actions,
       signal: this.accounting.signal,
       remainingMs: () => this.accounting.remainingMs(),
@@ -562,12 +604,16 @@ class ActDispatch {
 }
 
 /** The replay engine's view of a capture: the nodes, and the viewport a recorded point is checked against. */
+function screenOf(observation: SemanticAgentObservation, appOrigin: string | undefined): SemanticScreen;
+function screenOf(observation: AgentObservation, appOrigin: string | undefined): ObservedScreen;
 function screenOf(observation: AgentObservation, appOrigin: string | undefined): ObservedScreen {
   const metadata = {
     viewport: { width: observation.viewport.width, height: observation.viewport.height },
     ...(observation.location === undefined ? {} : { path: appLocation(observation.location, appOrigin) }),
   };
   return observation.kind === 'semantic'
-    ? { ...metadata, kind: 'semantic', nodes: observation.nodes }
+    ? { ...metadata, kind: 'semantic', nodes: observation.nodes,
+        ...(!observation.truncated && observation.identityScope !== undefined && observation.replayControls !== undefined
+          ? { identityScope: observation.identityScope, replayControls: observation.replayControls } : {}) }
     : { ...metadata, kind: 'pixels' };
 }

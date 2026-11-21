@@ -966,6 +966,10 @@ Core
 presentation revisions use the reserved `b<number>`, `l<number>`, and
 `s<number>` namespaces; undecorated engine refs remain engine-validated.
 
+`ReplayControlEvidence` 以当前观察签发的节点 ID 为键，值含同一表单和控件的临时身份。单选标签还携带原生选中与悬停状态。`stable` 仅在隔开的两次同文档取样一致时为真。定位和操作仍需当前完整观察签发的引用。框架只在内存中比较这些身份，模型输入、录制和报告只使用各自公开的字段。
+
+原生浏览器读取完整语义树期间会在读取帧、获取文档、定位节点、读取属性和投影结果之间复查目标清单的版本。版本推进后会先结算已发出的浏览器命令和资源，再结束这次读取。脱敏原生日志的 `readError.observation` 分别用 `inventory-frame`、`inventory-document`、`inventory-receivers`、`inventory-metadata`、`inventory-projection` 记录首个检测到变化的边界。报告中的 `stale-scope` 仍由引擎按原有规则处理。
+
 Return the surface as it is right now. The runner mints the revision and
 stamps it onto every ref. When `pixels` are present, it checks that
 `maskedRegionCount` covers every `secure` node. A valid empty tree may have a
@@ -978,6 +982,8 @@ childless root and include `pixels`.
  * observation byte budget apply to every engine equally.
  */
 export interface EngineSnapshot {
+  /** 可选的同文档表单控件凭据，供回放比较两次采样。 */
+  readonly replayControls?: Readonly<Record<string, ReplayControlEvidence>>;
   /** Opaque live-element namespace; changes prevent cross-scope relocation. */
   readonly identityScope?: string;
   /**
@@ -1023,6 +1029,9 @@ export interface EngineSnapshot {
 }
 
 export interface EngineObserveOptions {
+  /** 请求原生浏览器在完整观察期间复核少量已授权的表单控件。 */
+  /** 引擎可在首次收到显式请求时返回采样结果。 */
+  readonly sampleReplayForm?: boolean;
   /** Requests masked viewport pixels for the same revision as the tree. */
   readonly pixels?: boolean;
   /** Permits independently masked pixels to replace a failed semantic capture. */

@@ -201,6 +201,18 @@ describe('describeDelta', () => {
     expect(describeDelta(before, after, false)).toEqual({ appeared: [{ text: 'Item added' }], gone: [{ text: '41 items' }] });
   });
 
+  it('treats a localized count on a destination page as data when another anchor holds', () => {
+    const count = { text: '找到 20 条记录' };
+    const ordinal = { text: '第 3 项设置' };
+    const start = nodes([heading]);
+    const end = nodes([heading, node('c', count), node('o', ordinal), row]);
+    expect(describeDelta(start, end, true).appeared).toEqual([ordinal, { role: 'link', name: 'PB-Twin-Alpha' }]);
+    expect(describeDelta(start, end, false).appeared).toContainEqual(count);
+    expect(describeDelta(start, nodes([heading, node('c', count)]), true).appeared).toEqual([count]);
+    expect(describeDelta(start, nodes([heading, node('a', { ...count, role: 'alert' }), row]), true).appeared)
+      .toContainEqual({ ...count, role: 'alert' });
+  });
+
   describe('a radio the pick replaces with its summary', () => {
     const radio = (id: string, name: string) => node(id, { role: 'radio', name });
     const label = (id: string, text: string) => node(id, { text });

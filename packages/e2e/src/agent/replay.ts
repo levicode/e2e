@@ -26,6 +26,8 @@ import {
   type ExecutorTarget,
   type ReplayHandOffReason,
 } from './executor.ts';
+import { localFormTransition, type LocalFormCheck } from './replay-form.ts';
+import type { EngineSnapshot } from '../engine/index.ts';
 import { SETTLE_AFTER, type SettleMode } from './settle-policy.ts';
 
 /** Backoff between looks at the screen while it settles. */
@@ -47,7 +49,7 @@ export type ObservedScreen = {
    */
   readonly path?: string;
 } & (
-  | { readonly kind: 'semantic'; readonly nodes: ObservedNodes }
+  | { readonly kind: 'semantic'; readonly nodes: ObservedNodes; readonly identityScope?: string; readonly replayControls?: NonNullable<EngineSnapshot['replayControls']> }
   | { readonly kind: 'pixels' }
 );
 
@@ -63,7 +65,7 @@ export interface ReplayHost {
    * replayed action never lands on a screen still reacting to the previous
    * one, and the pacing can never drift from the executor-facing observe.
    */
-  observe(mode: SettleMode): Promise<ObservedScreen>;
+  observe(mode: SettleMode, local?: LocalFormCheck): Promise<ObservedScreen>;
   /** The step's policed action grammar; targets are fresh-observation ids. */
   readonly actions: ExecutorActions;
   readonly signal: AbortSignal;
@@ -276,6 +278,7 @@ export async function replayTrace(
   };
 
   let previous: RecordedAction | undefined;
+  let local: LocalFormCheck | undefined;
   for (const [position, action] of trace.actions.entries()) {
     current = { index: position + 1, summary: action.summary };
     if (!host.traceEligible) return stop('action-failed');
@@ -291,7 +294,8 @@ export async function replayTrace(
         ? options.initial === undefined
           ? HELD_STILL
           : { kind: 'in-hand', screen: options.initial }
-        : { kind: 'capture', settle: SETTLE_AFTER[previous.name].look };
+        : { kind: 'capture', settle: SETTLE_AFTER[previous.name].look, ...(local === undefined ? {} : { local }) };
+    local = undefined;
     // Repeats of a folded scroll done before it failed moved the screen: the
     // hand-off counts them as executed, so the executor is not told the
     // screen is untouched.
@@ -304,6 +308,7 @@ export async function replayTrace(
           const relocated = await relocate(host, planned.descriptor, look);
           if (relocated.kind === 'failed') return stop(relocated.failure);
           await planned.invoke({ id: relocated.id });
+          local = localFormTransition(trace, position, relocated.screen, relocated.id, options.initial);
           break;
         }
         case 'free':
@@ -440,7 +445,7 @@ async function relocate(
       return retryable(result.failure, descriptor) ? undefined : last;
     }
     const node = screen.nodes.get(result.id);
-    return node === undefined ? undefined : { ...result, node };
+    return node === undefined ? undefined : { ...result, node, screen };
   }, look);
   return settled ?? last;
 }
@@ -488,7 +493,7 @@ function retryable(failure: RelocationFailure, descriptor: TraceTargetDescriptor
 
 /** A relocation with the node it found, or with the screen its look-alikes are on, for a replay that needs boxes. */
 type Relocated =
-  | (Extract<RelocationResult, { kind: 'found' }> & { readonly node: RedactedNode })
+  | (Extract<RelocationResult, { kind: 'found' }> & { readonly node: RedactedNode; readonly screen: SemanticScreen })
   | Extract<RelocationResult, { failure: 'target-not-found' }>
   | (Extract<RelocationResult, { failure: 'target-ambiguous' }> & { readonly screen: SemanticScreen });
 
@@ -572,7 +577,7 @@ async function scrollOnce(
  */
 type Look =
   | { readonly kind: 'in-hand'; readonly screen: SemanticScreen }
-  | { readonly kind: 'capture'; readonly settle: SettleMode };
+  | { readonly kind: 'capture'; readonly settle: SettleMode; readonly local?: LocalFormCheck };
 
 /** A fresh look that proves the screen holds still: the first look of a replay without a start capture, and the look after an action that moved the screen. */
 const HELD_STILL: Look = { kind: 'capture', settle: 'held-still' };
@@ -582,7 +587,7 @@ function firstLook(host: ReplayHost, look: Look): Promise<ObservedScreen> {
     case 'in-hand':
       return Promise.resolve(look.screen);
     case 'capture':
-      return host.observe(look.settle);
+      return host.observe(look.settle, look.local);
   }
 }
 

@@ -175,8 +175,11 @@ export async function retryingObserve(options: {
   readonly api: string;
   readonly fallback: boolean;
   readonly tainted: () => boolean;
+  /** Space replay reads by their start time when the observed node disappears. */
+  readonly paceStale?: boolean;
 }): Promise<Observation> {
   for (;;) {
+    const started = performance.now();
     const withheld = options.fallback && options.tainted();
     try {
       return await options.observe(options.operation(), options.fallback && !withheld);
@@ -197,7 +200,9 @@ export async function retryingObserve(options: {
       if (engineError === undefined || !engineError.retryable) {
         throw cause;
       }
-      await sleep(POLL_INTERVAL_MS, options.signal);
+      const delay = options.paceStale && engineError.code === 'NODE_STALE'
+        ? POLL_INTERVAL_MS - (performance.now() - started) : POLL_INTERVAL_MS;
+      if (delay > 0) await sleep(delay, options.signal);
     }
   }
 }

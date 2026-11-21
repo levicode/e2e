@@ -246,7 +246,7 @@ export class ActionDispatcher {
       });
       if (control !== undefined) {
         const target = { id: control.ref.id };
-        await this.runActionNow(nodeVerb, () => this.targeted(this.feed.resolve(target), (node) => this.performNode(nodeVerb, node)));
+        await this.runActionNow(nodeVerb, undispatched => this.targeted(this.feed.resolve(target), node => this.performNode(nodeVerb, node), undispatched));
         return { point: clamped, target, summary };
       }
       if (!this.verbs.has(verb)) {
@@ -279,7 +279,9 @@ export class ActionDispatcher {
       if (this.accounting.closed) throw new AgentError('CANCELLED', 'the step has ended');
       if (call.mutates) {
         this.accounting.reserveAction();
-        this.options.trace()?.recordGap(call.name);
+        const trace = this.options.trace();
+        trace?.actionStarting();
+        trace?.recordGap(call.name);
       }
       const name = `${PROJECT_TOOL_EVENT_PREFIX}${call.name}`;
       const value = await instrumentPhase(this.runtime, { api: this.accounting.api, kind: 'engine', phase: 'agent.action', name }, body);
@@ -402,7 +404,7 @@ export class ActionDispatcher {
       return { name: 'scroll', direction };
     };
     if (target === undefined) return this.runAction('scroll', viewport);
-    await this.runAction('scroll', async () => {
+    await this.runAction('scroll', async undispatched => {
       // A list that filled the screen and left the tree scrolls as the
       // viewport does (`scroll-target.ts`).
       const resolved = resolveScrollTarget(this.feed, target);
@@ -421,7 +423,7 @@ export class ActionDispatcher {
           node,
           ...(node.rect === undefined ? {} : { spans: viewportShare(node.rect, observation.viewport) }),
         };
-      });
+      }, undispatched);
     });
   }
 
@@ -573,19 +575,20 @@ export class ActionDispatcher {
    * event's `detail` prose derives from it in a pure hook, and the dispatcher
    * writes it to the trace cache after the phase settles.
    */
-  private runAction(name: GrammarActionName, body: () => Promise<RecordableAction>): Promise<void> {
+  private runAction(name: GrammarActionName, body: (undispatched?: () => void) => Promise<RecordableAction>): Promise<void> {
     return this.queue.run(() => this.runActionNow(name, body));
   }
 
-  private async runActionNow(name: GrammarActionName, body: () => Promise<RecordableAction>): Promise<void> {
+  private async runActionNow(name: GrammarActionName, body: (undispatched?: () => void) => Promise<RecordableAction>): Promise<void> {
     this.accounting.reserveAction();
+    const undispatched = this.options.trace()?.actionStarting();
     const redaction = { redact: this.runtime.redact, redactCut: this.runtime.redactCut };
     let action: RecordableAction;
     try {
       action = await instrumentPhase(
         this.runtime,
         { api: this.accounting.api, kind: 'engine', phase: 'agent.action', name },
-        body,
+        () => body(undispatched),
         (committed) => ({ detail: describeAction(committed, redaction).summary }),
       );
     } catch (cause) {
@@ -676,7 +679,7 @@ export class ActionDispatcher {
     perform: (node: RedactedNode) => Promise<RecordableAction>,
   ): Promise<void> {
     // Resolved inside the body, so it reads the screen the earlier actions of the turn left.
-    return this.runAction(name, () => this.targeted(this.feed.resolve(target), perform));
+    return this.runAction(name, undispatched => this.targeted(this.feed.resolve(target), perform, undispatched));
   }
 
   /**
@@ -687,6 +690,7 @@ export class ActionDispatcher {
   private async targeted(
     resolved: Resolved,
     perform: (node: RedactedNode, observation: SemanticAgentObservation) => Promise<RecordableAction>,
+    undispatched?: () => void,
   ): Promise<RecordableAction> {
     let { node, observation } = resolved;
     for (let relocations = 0; ; relocations += 1) {
@@ -695,6 +699,7 @@ export class ActionDispatcher {
         return { ...(await perform(node, observation)), ...placement };
       } catch (cause) {
         if (asEngineError(cause)?.code !== 'NODE_STALE') throw cause;
+        undispatched?.();
         const relocated = relocations < MAX_STALE_RELOCATIONS ? await this.feed.relocate({ node, observation }) : undefined;
         if (relocated === undefined) {
           throw new AgentError('LOCATOR_NOT_FOUND', 'the target node left the screen before the action reached it', {
@@ -703,6 +708,7 @@ export class ActionDispatcher {
         }
         node = relocated.node;
         observation = relocated.observation;
+        undispatched = this.options.trace()?.actionStarting();
       }
     }
   }

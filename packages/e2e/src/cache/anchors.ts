@@ -168,6 +168,7 @@ const VOLATILE_TEXT: readonly RegExp[] = [
 const COUNT_TEXT: readonly RegExp[] = [
   /\b\d+\s*(?:to|-|\u2013)\s*\d+\s+of\s+\d+\b/i,
   /\b\d+\s+(?:results?|items?|rows?|entries|records?|matches|total)\b/i,
+  /(?:^|[^\d第\s])\s*\d+\s*(?:个|条|项)/u,
 ];
 
 /**

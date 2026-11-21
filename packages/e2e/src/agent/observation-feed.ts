@@ -35,6 +35,7 @@ import {
 import { observationByteBudget } from './observation-budget.ts';
 import type { OperationQueue } from './operation-queue.ts';
 import { instrumentPhase, recordPolicyEvent, retryingObserve } from './phases.ts';
+import type { LocalFormResult } from './replay-form.ts';
 import { HELD_STILL_MS, type SettleMode } from './settle-policy.ts';
 import type { StepAccounting } from './step-accounting.ts';
 
@@ -59,11 +60,26 @@ export interface Resolved {
   readonly observation: SemanticAgentObservation;
 }
 
+/** Shape of one live, complete observation. It never carries action references. */
+export interface StabilitySample {
+  readonly identityScope: string;
+  readonly path: string;
+  readonly shape: string;
+  readonly capturedAt: number;
+}
+
 /** What a target names on the newest screen: the id as the screen lists it, the node or nothing, and the screen looked at. */
 export interface Lookup {
   readonly id: string;
   readonly node: RedactedNode | undefined;
   readonly observation: SemanticAgentObservation;
+}
+
+interface LocalSettle {
+  match(sample: SemanticAgentObservation): LocalFormResult;
+  readonly sampleControls: boolean;
+  readonly opening: boolean;
+  readonly handoff: boolean;
 }
 
 export interface ObservationFeedOptions {
@@ -77,6 +93,7 @@ export interface ObservationFeedOptions {
 
 export class ObservationFeed {
   private newest: AgentObservation | undefined;
+  private newestAt = 0;
   /** A cache probe may supply the executor's first look, once, before any action. */
   private opening: AgentObservation | undefined;
   private semanticHistory = true;
@@ -115,6 +132,17 @@ export class ObservationFeed {
     return this.newest;
   }
 
+  /** The completed replay's final observation can seed a later stability check. */
+  stabilitySample(): StabilitySample | undefined {
+    const latest = this.newest;
+    if (latest?.kind !== 'semantic' || latest.path === undefined || latest.identityScope === undefined || latest.truncated ||
+        latest.pixels !== undefined || isTransitionalObservation(latest)) return undefined;
+    const shape = observationShape(latest);
+    return shape === undefined ? undefined : {
+      identityScope: latest.identityScope, path: latest.path, shape, capturedAt: this.newestAt,
+    };
+  }
+
   /** A trace may only describe a step observed with semantic evidence throughout. */
   get traceEligible(): boolean {
     return this.semanticHistory;
@@ -144,9 +172,9 @@ export class ObservationFeed {
    * look once. Every later capture clears that handoff before starting, even
    * when the later capture fails.
    */
-  probe(mode: SettleMode): Promise<AgentObservation> {
+  probe(mode: SettleMode, prior?: StabilitySample, local?: LocalSettle): Promise<AgentObservation> {
     return this.queue.run(async () => {
-      const observation = await this.observeNow(mode, false);
+      const observation = await this.observeNow(mode, false, prior, local);
       if (this.accounting.metrics.actionSteps === 0) this.opening = observation;
       return observation;
     });
@@ -308,7 +336,7 @@ export class ObservationFeed {
   }
 
   /** One recorded observation, settled as far as `mode` asks. */
-  private async observeNow(mode: SettleMode, pixels: boolean): Promise<AgentObservation> {
+  private async observeNow(mode: SettleMode, pixels: boolean, prior?: StabilitySample, local?: LocalSettle): Promise<AgentObservation> {
     this.opening = undefined;
     this.accounting.checkpoint();
     // A tainted viewport never captures pixels: the engine would mask what it
@@ -317,7 +345,7 @@ export class ObservationFeed {
     const observation = await instrumentPhase(
       this.runtime,
       { api: this.accounting.api, kind: 'observation', phase: 'agent.observe' },
-      () => this.captureSettled(mode, capturePixels),
+      () => this.captureSettled(mode, capturePixels, prior, local),
       observationDetail,
     );
     this.publish(observation);
@@ -332,12 +360,19 @@ export class ObservationFeed {
    * after-change reads the first post-change capture, which is all a fill's
    * own field needs.
    */
-  private captureSettled(mode: SettleMode, pixels: boolean): Promise<AgentObservation> {
+  private async captureSettled(mode: SettleMode, pixels: boolean, prior?: StabilitySample, local?: LocalSettle): Promise<AgentObservation> {
     if (mode === 'raw') return this.capture(pixels);
     const changedFrom = this.pendingChange;
     this.pendingChange = undefined;
-    return settleObservation(
-      () => this.capture(pixels),
+    let accepted = false;
+    let checkedMs = 0;
+    let sampleControls = local?.sampleControls === true;
+    const observation = await settleObservation(
+      () => {
+        const sample = sampleControls;
+        sampleControls = false;
+        return this.capture(pixels, local === undefined ? undefined : sample ? 'stable-form' : 'form');
+      },
       observationShape,
       {
         remainingMs: () => this.accounting.remainingMs(),
@@ -349,10 +384,31 @@ export class ObservationFeed {
       {
         changedFrom,
         stableWaitMs: mode === 'held-still' ? HELD_STILL_MS : 0,
+        ...(local === undefined ? {} : { local: {
+          opening: local.opening,
+          match: (sample: AgentObservation) => {
+            if (sample.kind !== 'semantic' || sample.truncated || sample.pixels !== undefined) return undefined;
+            const start = performance.now();
+            try { return local.match(sample); } finally { checkedMs += performance.now() - start; }
+          },
+          accepted: () => { accepted = true; },
+        } }),
         changeShapeOf: changeShape,
         transitional: isTransitionalObservation,
+        ...(prior !== undefined && !pixels ? {
+          prior: {
+            capturedAt: prior.capturedAt,
+            matches: (value, shape) => value.kind === 'semantic' && !value.truncated &&
+              value.pixels === undefined && value.identityScope === prior.identityScope &&
+              value.path === prior.path && shape === prior.shape,
+          },
+        } : {}),
       },
     );
+    if (local === undefined) return observation;
+    const modeName = local.handoff ? 'replay-handoff' : local.opening ? 'replay-opening' : 'replay-local';
+    const phase = accepted ? modeName + '-confirmed' : modeName + '-fallback';
+    return { ...observation, phases: { ...observation.phases, [phase]: Math.round(checkedMs) } };
   }
 
   /** Makes an observation the newest, remembers it among the recent ones, and books its size. */
@@ -363,6 +419,7 @@ export class ObservationFeed {
       this.pendingChange = undefined;
     }
     this.newest = observation;
+    this.newestAt = Date.now();
     if (observation.kind === 'semantic' && observation.truncated) {
       this.observationTruncated = true;
     }
@@ -394,15 +451,21 @@ export class ObservationFeed {
   }
 
   /** One raw observation capture: retried at the engine, then redacted and bounded. */
-  private async capture(pixels: boolean): Promise<AgentObservation> {
+  private async capture(pixels: boolean, form?: 'form' | 'stable-form'): Promise<AgentObservation> {
     this.opening = undefined;
+    let sampleForm = form === 'stable-form';
     const raw = await retryingObserve({
-      observe: (operation, pixelFallback) => this.runtime.engine.session.observe(operation, { pixels, pixelFallback }),
+      observe: (operation, pixelFallback) => {
+        const requested = sampleForm;
+        sampleForm = false;
+        return this.runtime.engine.session.observe(operation, { pixels, pixelFallback, ...(requested ? { sampleReplayForm: true } : {}) });
+      },
       operation: () => this.accounting.operation(),
       guard: (cause) => this.accounting.checkpoint(cause),
       signal: this.runtime.engine.signal,
       api: this.accounting.api,
       fallback: true,
+      paceStale: form !== undefined || (!pixels && this.accounting.replayingTrace),
       tainted: () => this.runtime.exposure.withholdsModelPixels,
     });
     if (raw.kind === 'pixels') {
