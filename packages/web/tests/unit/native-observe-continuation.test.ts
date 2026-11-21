@@ -71,6 +71,79 @@ test('reacquires the first observation after both clean startup races', async ()
   } finally { await engine.dispose!(cleanup()).catch(() => undefined); }
 });
 
+test('reacquires a refused read at once when the read already outlasted the settle cadence', async () => {
+  const nativeNow = performance.now.bind(performance);
+  let skew = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => nativeNow() + skew);
+  const reads: number[] = [];
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    reads.push(performance.now());
+    // The first read took 305 ms before it reported the clean refusal.
+    if (++count === 1) { skew = 305; return { error: 'stale-scope' }; }
+    return { data: snapshot() };
+  });
+  try {
+    await expect(engine.observe!(operation())).resolves.toMatchObject({ identityScope: 'scope-1' });
+    expect(count).toBe(2);
+    // That read already gave frame enrollment its whole window, so the retry
+    // carries no extra settle wait on top of it (an extra 100 ms would land
+    // this gap near 405 ms).
+    expect(reads[1]! - reads[0]!).toBeLessThan(360);
+  } finally {
+    skew = 0;
+    await engine.dispose!(cleanup()).catch(() => undefined);
+  }
+});
+
+test('spends only the rest of the settle cadence after a partial read', async () => {
+  const nativeNow = performance.now.bind(performance);
+  let skew = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => nativeNow() + skew);
+  const reads: number[] = [];
+  let count = 0;
+  const engine = await fixture(frame => {
+    if (frame.command !== 'browser.observe') return undefined;
+    reads.push(performance.now());
+    if (++count === 1) { skew = 40; return { error: 'stale-scope' }; }
+    return { data: snapshot() };
+  });
+  try {
+    await expect(engine.observe!(operation())).resolves.toMatchObject({ identityScope: 'scope-1' });
+    expect(count).toBe(2);
+    // A 40 ms read leaves the rest of the cadence (60 ms) to wait out.
+    expect(reads[1]! - reads[0]!).toBeGreaterThanOrEqual(95);
+    expect(reads[1]! - reads[0]!).toBeLessThan(250);
+  } finally {
+    skew = 0;
+    await engine.dispose!(cleanup()).catch(() => undefined);
+  }
+});
+
+test('keeps the whole settle cadence for a command with a single retry', async () => {
+  const nativeNow = performance.now.bind(performance);
+  let skew = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => nativeNow() + skew);
+  const reads: number[] = [];
+  const engine = await fixture(frame => {
+    if (frame.command !== 'state.capture') return undefined;
+    reads.push(performance.now());
+    if (reads.length === 1) skew = 305;
+    return { error: 'stale-scope', effects: 'not-dispatched', scopeState: 'usable' } as PeerOutcome;
+  });
+  try {
+    await expect(engine.state!.capture(operation())).rejects.toBeInstanceOf(Error);
+    expect(reads).toHaveLength(2);
+    // Enrollment can begin late in a slow read, and this retry has no second
+    // chance: the cadence still runs from the refusal.
+    expect(reads[1]! - reads[0]!).toBeGreaterThanOrEqual(395);
+  } finally {
+    skew = 0;
+    await engine.dispose!(cleanup()).catch(() => undefined);
+  }
+});
+
 test('returns the second clean refusal after an observation has already published', async () => {
   let count = 0;
   const engine = await fixture(frame => frame.command === 'browser.observe'

@@ -7,6 +7,7 @@ import {
   POLL_INTERVAL_MS,
   pollCondition,
   sleep,
+  sleepRemainder,
   withTimeout,
 } from '../../src/internal/time.ts';
 import { E2EError } from '../../src/internal/errors.ts';
@@ -76,6 +77,38 @@ describe('sleep', () => {
     await vi.advanceTimersByTimeAsync(1);
     await promise;
     expect(getEventListeners(controller.signal, 'abort')).toEqual([]);
+  });
+});
+
+describe('sleepRemainder', () => {
+  it('sleeps only the part of the interval an attempt has not already spent', async () => {
+    vi.useFakeTimers();
+    const startedMs = Date.now();
+    vi.setSystemTime(startedMs + 40);
+    let done = false;
+    const pending = sleepRemainder(100, startedMs).then(() => {
+      done = true;
+    });
+    await vi.advanceTimersByTimeAsync(59);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(done).toBe(true);
+  });
+
+  it('yields at once when the attempt outlasted the interval', async () => {
+    vi.useFakeTimers();
+    const startedMs = Date.now();
+    vi.setSystemTime(startedMs + 305);
+    const pending = sleepRemainder(100, startedMs);
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it('still rejects an aborted signal when no wait is left', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(sleepRemainder(0, Date.now(), controller.signal)).rejects.toMatchObject({ code: 'CANCELLED' });
   });
 });
 

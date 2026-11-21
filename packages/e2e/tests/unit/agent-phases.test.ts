@@ -56,6 +56,60 @@ describe('retryingObserve', () => {
     expect(attempts).toBe(3);
   });
 
+  it('re-reads at once when the failed read already outlasted the poll interval', async () => {
+    vi.useFakeTimers();
+    vi.setTimerTickMode('nextTimerAsync');
+    let attempts = 0;
+    const startedMs = Date.now();
+    const observation = await retryingObserve({
+      observe: () => {
+        attempts += 1;
+        if (attempts === 1) {
+          // The capture reports its race after 305 ms: that read already gave
+          // the page the poll interval and more, so the retry owes no wait.
+          vi.setSystemTime(Date.now() + 305);
+          return Promise.reject(foreignEngineError('NODE_STALE', true));
+        }
+        return Promise.resolve(OBSERVATION);
+      },
+      operation,
+      guard: () => undefined,
+      signal: new AbortController().signal,
+      api: 'agent.act',
+      fallback: false,
+      tainted: () => false,
+    });
+    expect(observation).toBe(OBSERVATION);
+    expect(attempts).toBe(2);
+    expect(Date.now() - startedMs).toBe(305);
+  });
+
+  it('holds the poll remainder after a fast retryable race', async () => {
+    vi.useFakeTimers();
+    vi.setTimerTickMode('nextTimerAsync');
+    let attempts = 0;
+    const startedMs = Date.now();
+    const pending = retryingObserve({
+      observe: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(foreignEngineError('NODE_STALE', true))
+          : Promise.resolve(OBSERVATION);
+      },
+      operation,
+      guard: () => undefined,
+      signal: new AbortController().signal,
+      api: 'agent.act',
+      fallback: false,
+      tainted: () => false,
+    });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toBe(OBSERVATION);
+    expect(Date.now() - startedMs).toBe(100);
+  });
+
   it('surfaces a non-retryable engine failure at once', async () => {
     let attempts = 0;
     await expect(

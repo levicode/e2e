@@ -20,7 +20,7 @@ import { keyContextChanges, type CacheAgentIdentity } from '../cache/identity.ts
 import { recordedProvenance, TraceRecorder, type TraceDefect } from '../cache/recorder.ts';
 import { expandTrace, templateParams, templatesCollide, templateTrace, type ParamTemplate } from '../cache/template.ts';
 import { readTraceEntry, targetLabel, type ActionTrace, type DerivedReason, type RecordedModel, type TraceEntry, type TraceTargetDescriptor } from '../cache/trace.ts';
-import { sleep } from '../internal/time.ts';
+import { sleepRemainder } from '../internal/time.ts';
 import type { StepCacheInfo } from '../run/steps.ts';
 import type { JsonValue } from '../types.ts';
 import type { RecordableAction } from './actions.ts';
@@ -523,20 +523,24 @@ export class StepTraceSession {
   private async endScreen(trace: ActionTrace): Promise<SemanticScreen | undefined> {
     const startedMs = Date.now();
     const recorded = trace.endPath;
+    let lookStartedMs = startedMs;
     for (let attempt = 0; ; attempt += 1) {
       const observation = await probeScreen(this.host, 'raw');
       if (observation?.kind !== 'semantic' || !this.host.traceEligible) return undefined;
       if (recorded === undefined || observation.path === undefined || sameRoute(recorded, observation.path)) return observation;
-      // The last delay repeats until the timeout, as in `pollSettled`.
+      // The last delay repeats until the timeout, as in `pollSettled`; a look
+      // that already spent part of that interval is owed only the rest.
       const delay = END_PATH_DELAYS_MS[attempt] ?? END_PATH_DELAYS_MS[END_PATH_DELAYS_MS.length - 1]!;
+      const waitMs = Math.max(0, delay - (Date.now() - lookStartedMs));
       if (
-        Date.now() - startedMs + delay > END_PATH_TIMEOUT_MS ||
+        Date.now() - startedMs + waitMs > END_PATH_TIMEOUT_MS ||
         this.host.remainingMs() <= delay ||
         this.host.signal.aborted
       ) {
         return undefined;
       }
-      await sleep(delay, this.host.signal);
+      await sleepRemainder(delay, lookStartedMs, this.host.signal);
+      lookStartedMs = Date.now();
     }
   }
 

@@ -354,6 +354,54 @@ describe('replayTrace', () => {
     expect(host.observations).toBe(9);
   });
 
+  it('re-tries at once when the look that missed outlasted the settling backoff', async () => {
+    const host = makeHost({});
+    host.capture = async () => {
+      host.observations += 1;
+      if (host.observations === 1) {
+        // The slow look reports the target gone only after 305 ms: the screen
+        // has already had the first backoff and more to settle.
+        vi.setSystemTime(Date.now() + 305);
+        return screen([email]);
+      }
+      return screen([upgrade, email]);
+    };
+    const startedMs = Date.now();
+    const outcome = await replayTrace(host, trace([tapUpgrade]));
+    expect(outcome).toMatchObject({ completed: true, executed: 1 });
+    expect(host.observations).toBe(2);
+    expect(Date.now() - startedMs).toBe(305);
+  });
+
+  it('hands off instead of starting a look the step clock cannot afford', async () => {
+    const host = makeHost({ remainingMs: 90 });
+    host.capture = async () => {
+      host.observations += 1;
+      if (host.observations === 1) {
+        // A slow look that missed, with less than one backoff left on the step
+        // clock: the poll must hand the step off, not start another read.
+        vi.setSystemTime(Date.now() + 305);
+        return screen([email]);
+      }
+      return screen([upgrade, email]);
+    };
+    const outcome = await replayTrace(host, trace([tapUpgrade]));
+    expect(outcome).toMatchObject({ completed: false, executed: 0, stopReason: 'target-not-found' });
+    expect(host.observations).toBe(1);
+  });
+
+  it('holds the settling backoff after a fast look that missed', async () => {
+    const host = makeHost({});
+    host.capture = async () => {
+      host.observations += 1;
+      return screen(host.observations === 1 ? [email] : [upgrade, email]);
+    };
+    const startedMs = Date.now();
+    const outcome = await replayTrace(host, trace([tapUpgrade]));
+    expect(outcome).toMatchObject({ completed: true, executed: 1 });
+    expect(Date.now() - startedMs).toBe(100);
+  });
+
   it('keeps looking while a positioned target is ambiguous, since a form still rendering shows fewer twins', async () => {
     const unnamed = (id: string): SemanticNode => ({ ref: { id, revision: 'r1' }, role: 'textbox' });
     // Unnamed twins are told apart by their place only inside a named container.
