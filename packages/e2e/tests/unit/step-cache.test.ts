@@ -1156,6 +1156,35 @@ describe('destination path settling', () => {
     expect(Date.now() - neverMs).toBeLessThanOrEqual(15_000);
   });
 
+  it('starts the end-route backoff from the look that missed the destination', async () => {
+    vi.useFakeTimers();
+    vi.setTimerTickMode('nextTimerAsync');
+    const startedMs = Date.now();
+    let looks = 0;
+    const host: StepCacheHost = {
+      ...makeHost([]),
+      observe: async () => {
+        looks += 1;
+        if (looks === 2) {
+          // The first look after the replay reported the old route only after
+          // 305 ms: the screen has already had the first delay and more.
+          vi.setSystemTime(Date.now() + 305);
+          return { kind: 'semantic', nodes: nodeMap([]), viewport: { width: 1280, height: 720 }, path: '/pricing' };
+        }
+        return {
+          kind: 'semantic',
+          nodes: nodeMap([]),
+          viewport: { width: 1280, height: 720 },
+          path: looks === 1 ? '/pricing' : '/customers',
+        };
+      },
+      remainingMs: () => 60_000,
+    };
+    const verdict = await makeSession(entryContext({ endPath: '/customers' }), host).begin();
+    expect(verdict?.status).toBe('passed');
+    expect(Date.now() - startedMs).toBe(305);
+  });
+
   it('still hands off when the destination never arrives within the budget', async () => {
     const context = entryContext({ endPath: '/customers' });
     const host = { ...makeHost(['/pricing', '/pricing', '/pricing', '/pricing']), remainingMs: () => 250 };

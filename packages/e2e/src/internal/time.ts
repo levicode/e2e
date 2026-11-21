@@ -61,6 +61,18 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/**
+ * Sleeps what is left of a retry interval after an attempt that began at
+ * `startedMs`: a read that reported a retryable race only after 305 ms has
+ * already given the screen that long to settle, so the retry is owed the rest
+ * of the interval, not the whole one again. The wait never goes negative, and
+ * an elapsed interval still yields once so cancellation lands before the next
+ * attempt.
+ */
+export function sleepRemainder(intervalMs: number, startedMs: number, signal?: AbortSignal): Promise<void> {
+  return sleep(Math.max(0, intervalMs - (Date.now() - startedMs)), signal);
+}
+
 /** Longest delay `setTimeout` honors; a longer one fires at once. */
 export const MAX_TIMER_MS = 2 ** 31 - 1;
 

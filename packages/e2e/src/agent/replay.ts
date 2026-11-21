@@ -18,7 +18,7 @@ import type { SemanticNode, ViewportPoint } from '../engine/surface.ts';
 import type { RedactedNode } from './observation.ts';
 import { hasCause } from '../internal/errors.ts';
 import { containsPoint, type Box } from '../internal/geometry.ts';
-import { sleep } from '../internal/time.ts';
+import { sleep, sleepRemainder } from '../internal/time.ts';
 import type { ScrollDirection } from '../types.ts';
 import {
   isRuntimeHardStop,
@@ -603,6 +603,7 @@ async function pollSettled<T>(
   look: Look,
 ): Promise<T | undefined> {
   const startedMs = Date.now();
+  let lookStartedMs = startedMs;
   let screen = await firstLook(host, look);
   for (let attempt = 0; ; attempt += 1) {
     if (screen.kind === 'pixels' || !host.traceEligible) return undefined;
@@ -610,11 +611,19 @@ async function pollSettled<T>(
     if (answer !== undefined) return answer;
     // The backoff's last delay repeats until the wait runs out: the list
     // shapes the first looks, the timeout bounds them, as the docs promise.
+    // The look just taken already spent part of that interval, and a slow
+    // one (a read that reported the target gone only after 305 ms) spent all
+    // of it: the next look is owed the rest, never a second full delay.
     const delay = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!;
-    if (Date.now() - startedMs + delay > RETRY_TIMEOUT_MS || host.remainingMs() <= delay) {
+    const waitMs = Math.max(0, delay - (Date.now() - lookStartedMs));
+    // The step clock must still afford the look's own cadence, not merely the
+    // remainder: a retry started on a budget that cannot outlast a read would
+    // fail the step instead of handing it off.
+    if (Date.now() - startedMs + waitMs > RETRY_TIMEOUT_MS || host.remainingMs() <= delay) {
       return undefined;
     }
-    await sleep(delay, host.signal);
+    await sleepRemainder(delay, lookStartedMs, host.signal);
+    lookStartedMs = Date.now();
     screen = await host.observe('raw');
   }
 }

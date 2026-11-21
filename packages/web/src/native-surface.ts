@@ -44,6 +44,16 @@ import { ISOLATED_PAGE_REOPEN_CAPABILITY, PAGE_IDENTITY_FENCE_CAPABILITY, PERSIS
 const SECURE_FIELD_SELECTOR = 'input[type="password" i]';
 const LIFECYCLE_TIMEOUT_MS = 3_600_000;
 const LATE_RECORDING_STOP_MS = 10_000;
+/**
+ * The settle cadence a clean read refusal leaves to in-flight frame
+ * enrollment before the adapter dispatches a fresh read. The observe path
+ * measures it from when the refused read began: a read that already spent this
+ * long gave enrollment that long, so it re-acquires at once. A command with a
+ * single retry (a screenshot or a state capture) waits the whole cadence after
+ * the refusal instead: enrollment can begin late in a slow read, and that
+ * retry has no second chance.
+ */
+const READ_REACQUISITION_MS = 100;
 interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEventMap]) => void | Promise<void>; unsubscribe?: (() => void) | undefined }
 interface ResourceCallbackOwner { attempt: Attempt; epoch: number; notRevoked: () => boolean; cleanupFailure?: Error }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
@@ -1259,14 +1269,25 @@ export class NativeSurface implements NativeWebSurface {
     if ((name.startsWith('browser.') || name.startsWith('fixture.') || name === 'capture.screenshot' || name === 'state.capture') && attempt.epoch !== pageEpoch) throw new EngineError('CANCELLED', 'The native page result owner has retired', { retryable: false });
     return result;
   }
-  /** Give in-flight enrollment a chance to settle before a fresh native acquisition. */
-  private async waitForReadReacquisition(operation: OperationContext, attempt: Attempt, scope: string, epoch: number, client: NativeClient, publication: number): Promise<void> {
+  /**
+   * Give in-flight enrollment the rest of its settle cadence before a fresh
+   * native acquisition: the refused read, which began at `readStartedMs`,
+   * already spent part of that cadence, so a slow read waits for none of it.
+   * Without that start, the command's one retry keeps the whole cadence,
+   * counted from the refusal.
+   */
+  private async waitForReadReacquisition(operation: OperationContext, attempt: Attempt, scope: string, epoch: number, client: NativeClient, publication: number, readStartedMs?: number): Promise<void> {
     this.assertObservationOwner(attempt, scope, epoch, client);
     this.assertPublication(client, publication); this.assertBudget(operation);
-    await withConnectionBudget(
-      { signal: AbortSignal.any([operation.signal, attempt.retirement.signal]), timeoutMs: operation.timeoutMs },
-      'native read reacquisition', () => new Promise(resolve => setTimeout(resolve, 100)),
-    );
+    const holdMs = readStartedMs === undefined
+      ? READ_REACQUISITION_MS
+      : Math.max(0, READ_REACQUISITION_MS - (performance.now() - readStartedMs));
+    if (holdMs > 0) {
+      await withConnectionBudget(
+        { signal: AbortSignal.any([operation.signal, attempt.retirement.signal]), timeoutMs: operation.timeoutMs },
+        'native read reacquisition', () => new Promise(resolve => setTimeout(resolve, holdMs)),
+      );
+    }
     this.assertObservationOwner(attempt, scope, epoch, client);
     this.assertPublication(client, publication); this.assertBudget(operation);
   }
@@ -1282,8 +1303,12 @@ export class NativeSurface implements NativeWebSurface {
     const epoch = attempt.epoch; const client = this.requireClient(); const publication = client.publicationCheckpoint();
     const args = { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR };
     let readArgs = args;
+    // When the current read began: a refusal's settle cadence counts from the
+    // read's own start, so a slow read re-acquires without another wait.
+    let readStartedMs = performance.now();
     const reacquire = async () => {
-      await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication);
+      await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication, readStartedMs);
+      readStartedMs = performance.now();
       return this.engineCommand('browser.observe', readArgs, operation);
     };
     let snapshot;

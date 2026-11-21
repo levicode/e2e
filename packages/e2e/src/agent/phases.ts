@@ -9,7 +9,7 @@ import type { Observation, OperationContext } from '../engine/surface.ts';
 import type { DebugTrace } from '../internal/debug.ts';
 import { asEngineError, isE2EError } from '../internal/errors.ts';
 import { timestamp } from '../internal/ids.ts';
-import { POLL_INTERVAL_MS, sleep, type Deadline } from '../internal/time.ts';
+import { POLL_INTERVAL_MS, sleepRemainder, type Deadline } from '../internal/time.ts';
 import type { LocatorEngine } from '../locator/engine.ts';
 import type { StepActivity, StepEvent, StepRecorder } from '../run/steps.ts';
 import { AgentError, toAgentError } from './error.ts';
@@ -166,6 +166,11 @@ function timedOutAtDeadline(cause: unknown, deadline: Deadline): boolean {
  * (`tainted`, read per capture) withholds; a capture that then times out
  * before the step clock does is the policy denial it is, not an engine
  * timeout, since only those pixels could have answered.
+ *
+ * The retry is owed only the rest of the poll interval, measured from when the
+ * failed capture began: a read that took 305 ms to report its race has already
+ * given the page that long to settle, and sleeping a full interval on top of
+ * it only delays an observation the screen was ready for.
  */
 export async function retryingObserve(options: {
   readonly observe: (operation: OperationContext, pixelFallback: boolean) => Promise<Observation>;
@@ -178,6 +183,7 @@ export async function retryingObserve(options: {
 }): Promise<Observation> {
   for (;;) {
     const withheld = options.fallback && options.tainted();
+    const attemptStartedMs = Date.now();
     try {
       return await options.observe(options.operation(), options.fallback && !withheld);
     } catch (cause) {
@@ -197,7 +203,7 @@ export async function retryingObserve(options: {
       if (engineError === undefined || !engineError.retryable) {
         throw cause;
       }
-      await sleep(POLL_INTERVAL_MS, options.signal);
+      await sleepRemainder(POLL_INTERVAL_MS, attemptStartedMs, options.signal);
     }
   }
 }
