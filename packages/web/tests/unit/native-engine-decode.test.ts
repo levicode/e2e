@@ -9,6 +9,14 @@ describe('native engine result boundary', () => {
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), revision: 42 })).toThrow();
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), root: { ref: { id: 'invented-uuid', revision: '1' } } })).toThrow();
   });
+  it('accepts only typed, equality-only facts for a native replay control', () => {
+    const control = { kind: 'field', owner: 'a'.repeat(64), target: 'b'.repeat(64), stable: true };
+    const withControl = (data: Record<string, unknown>) => ({ ...snapshot(), replayControls: { '@e8': data } });
+    expect(decodeEngineResult('browser.observe', withControl(control))).toEqual(withControl(control));
+    expect(() => decodeEngineResult('browser.observe', withControl({ ...control, stable: 'true' }))).toThrow();
+    expect(() => decodeEngineResult('browser.observe', withControl({ ...control, value: 'unexpected' }))).toThrow();
+    expect(() => decodeEngineResult('browser.observe', withControl({ ...control, owner: 'other scope' }))).toThrow();
+  });
   it('requires explicit scope and typed node fields', () => {
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), identityScope: '' })).toThrow();
     expect(() => decodeEngineResult('browser.observe', { ...snapshot(), root: { ...snapshot().root, states: { secure: 'true' } } })).toThrow();

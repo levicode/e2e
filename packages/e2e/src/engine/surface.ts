@@ -84,6 +84,7 @@ export type Observation = ObservationMetadata & (
 
 /** Capture identity and geometry, independent of whether semantic evidence exists. */
 interface ObservationMetadata {
+  readonly replayControls?: NonNullable<EngineSnapshot['replayControls']>;
   /** Opaque live-element namespace, not rendered or sent to the model. */
   readonly identityScope?: string;
   /** The captured semantic root, or the legacy viewport reference for pixel-only evidence. */

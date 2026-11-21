@@ -632,6 +632,8 @@ export interface EngineLocateOptions {
 }
 
 export interface EngineObserveOptions {
+  /** Request a second, scoped form-control sample within a protected semantic capture. */
+  readonly sampleReplayForm?: boolean;
   /** Requests masked viewport pixels for the same revision as the tree. */
   readonly pixels?: boolean;
   /** Allows independently masked pixels to replace a failed semantic capture. Never granted after a secret fill. */
@@ -644,12 +646,20 @@ export interface EngineObserveOptions {
   readonly comparable?: boolean;
 }
 
+/** A form and control identity bound to this document and session. These tokens never enter a recording or a model prompt. */
+export type ReplayControlEvidence = { readonly owner: string; readonly target: string; readonly stable?: boolean } & (
+  | { readonly kind: 'radio'; readonly checked: boolean; readonly hovered: boolean }
+  | { readonly kind: 'button' | 'field' }
+);
+
 /**
  * One fresh semantic snapshot of the surface under test. The harness owns
  * everything downstream: revision minting, secret redaction, and the
  * observation byte budget apply to every engine equally.
  */
 export interface EngineSnapshot {
+  /** Equality-only evidence for local replay settling, keyed by this snapshot's node IDs. Never used as action authority. */
+  readonly replayControls?: Readonly<Record<string, ReplayControlEvidence>>;
   /**
    * Opaque identity namespace for live element references. Keep it stable while
    * descriptor-based recovery is valid; change it when a reset or replacement

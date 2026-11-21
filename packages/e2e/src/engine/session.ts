@@ -397,6 +397,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         {
           ...(observeOptions?.pixels === true ? { pixels: true } : {}),
           ...(observeOptions?.pixelFallback === true ? { pixelFallback: true } : {}),
+          ...(observeOptions?.sampleReplayForm === true ? { sampleReplayForm: true } : {}),
           ...(observeOptions?.comparable === true ? { comparable: true } : {}),
         },
       );
@@ -442,7 +443,7 @@ export function createEngineSession(options: EngineSessionOptions): TargetSessio
         ...(snapshot.pixels === undefined ? {} : { pixels: snapshot.pixels }),
       };
       showScreen(observation);
-      return observation;
+      return snapshot.replayControls === undefined ? observation : { ...observation, replayControls: snapshot.replayControls };
     },
     async locate(expression, operation, locateOptions) {
       const epoch = evidence.checkpoint();
