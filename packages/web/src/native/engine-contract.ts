@@ -1,6 +1,6 @@
 /** Engine hooks over the same native command lane as the public Browser fixture. */
 import type {
-  EngineFieldValues, EngineReadField, EngineObserveOptions, LocatorAction, LocatorExpression, NodeRef, PointerAction,
+  EngineSnapshot, EngineFieldValues, EngineReadField, EngineObserveOptions, LocatorAction, LocatorExpression, NodeRef, PointerAction,
   SemanticNode, ViewportPoint, ViewportSize,
 } from 'e2e/engine';
 
@@ -25,6 +25,7 @@ export interface NativeTraceImage extends NativeImage {
   readonly location: string;
 }
 export interface NativeObservation extends Scoped {
+  readonly replayControls?: NonNullable<EngineSnapshot['replayControls']>;
   readonly revision: string;
   readonly location?: string;
   readonly root: SemanticNode;

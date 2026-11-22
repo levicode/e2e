@@ -1,5 +1,6 @@
 /** Observation capture, redaction, and model serialization. */
 
+import type { LocalFormResult } from './replay-form.ts';
 import { referenceText } from './reference-text.ts';
 import { OBSERVED_NAME_LIMIT, OBSERVED_TEXT_LIMIT } from '../engine/contract.ts';
 import type { NodeRef, Observation, SemanticNode, ViewportSize } from '../engine/surface.ts';
@@ -29,6 +30,8 @@ export type AgentObservation = AgentObservationMetadata & (
       readonly parents: ReadonlyMap<string, string>;
       readonly tree: RedactedNode;
       readonly truncated: boolean;
+      /** The engine omitted nodes, independently of the model's text budget. */
+      readonly treeTruncated?: true;
       /** The engine's measured keyboard state; `false` when it measured none, absent only when it did not measure. */
       readonly keyboardVisible?: boolean | undefined;
       readonly pixels?: ExecutorPixels | undefined;
@@ -45,6 +48,7 @@ export type SemanticAgentObservation = Extract<AgentObservation, { kind: 'semant
 
 /** Identity, geometry, and redacted prose shared by both evidence variants. */
 interface AgentObservationMetadata {
+  readonly replayControls?: NonNullable<Observation['replayControls']>;
   /** Internal stable viewport capability; omitted from executor/model observations. */
   readonly viewportRef?: NodeRef;
   /** Opaque live-element namespace, not rendered or sent to the model. */
@@ -89,6 +93,7 @@ export function prepareObservation(
   const location = observation.location === undefined ? undefined : options.redact(observation.location);
   const path = location === undefined ? undefined : observationPath(location);
   const metadata = {
+    ...(observation.kind === 'semantic' && !observation.truncated && observation.replayControls !== undefined ? { replayControls: observation.replayControls } : {}),
     revision: observation.revision,
     ...(observation.viewportRef === undefined ? {} : { viewportRef: observation.viewportRef }),
     ...(observation.identityScope === undefined ? {} : { identityScope: observation.identityScope }),
@@ -236,6 +241,7 @@ export function prepareObservation(
     parents,
     tree,
     truncated,
+    ...(observation.truncated ? { treeTruncated: true as const } : {}),
     ...(observation.keyboardVisible === undefined ? {} : { keyboardVisible: observation.keyboardVisible }),
     ...(pixels.cleared === undefined ? {} : { pixels: pixels.cleared }),
     ...(pixels.withheld === undefined ? {} : { pixelsWithheld: pixels.withheld }),
@@ -833,6 +839,13 @@ export interface SettleOptions<T> {
    */
   readonly stableWaitMs: number;
   readonly pollMs?: number | undefined;
+  /** Positive evidence from a fresh capture can settle a local replay transition. */
+  readonly local?: { readonly opening?: boolean; match(value: T): LocalFormResult; accepted(): void };
+  /** Whether the first fresh sample matches a recent, comparable live look. */
+  readonly prior?: {
+    readonly capturedAt: number;
+    readonly matches: (value: T, shape: string) => boolean;
+  };
 }
 
 /**
@@ -849,9 +862,10 @@ export interface SettleOptions<T> {
  * to leave the pre-action one (a navigation committing, a route swapping the
  * body, a submit rendering), then it waits for the new shape to hold still.
  * A screen that never leaves the pre-action shape is returned as it is once
- * the change wait runs out: the caller reports it unchanged rather than
- * guessing. Evidence with no comparable shape returns immediately; another
- * capture cannot establish semantic stability while semantics are unavailable.
+ * the change wait runs out. Two matching, non-transitional captures from
+ * that wait can already establish stability. Evidence with no comparable
+ * shape returns immediately; another capture cannot establish semantic
+ * stability while semantics are unavailable.
  */
 export async function settleObservation<T>(
   capture: () => Promise<T>,
@@ -861,21 +875,67 @@ export async function settleObservation<T>(
 ): Promise<T> {
   const pollMs = options.pollMs ?? SETTLE_POLL_MS;
   const transitional = options.transitional ?? (() => false);
+  const changedFrom = options.changedFrom;
+  const prior = changedFrom === undefined && options.stableWaitMs > 0 ? options.prior : undefined;
+  let comparePrior = false;
+  if (prior !== undefined) {
+    const age = Date.now() - prior.capturedAt;
+    const spacing = pollMs - age;
+    if (age >= 0 && age <= options.stableWaitMs && spacing > 0 && clock.remainingMs() > spacing) {
+      await sleep(spacing, clock.signal);
+    }
+    // A delayed timer or a clock change must not revive an expired sample.
+    const atCapture = Date.now() - prior.capturedAt;
+    comparePrior = atCapture >= pollMs && atCapture <= options.stableWaitMs;
+  }
   let value = await capture();
   let shape = shapeOf(value);
   if (shape === undefined) return value;
-  if (options.changedFrom !== undefined) {
+  if (comparePrior && prior !== undefined) {
+    const age = Date.now() - prior.capturedAt;
+    if (age >= pollMs && age <= options.stableWaitMs && prior.matches(value, shape) && !transitional(value)) return value;
+  }
+  if (options.local !== undefined && (changedFrom !== undefined || options.local.opening) && !transitional(value)) {
+    const ready = options.local.match(value);
+    if (ready === 'ready') {
+      options.local.accepted();
+      return value;
+    }
+    if (ready !== undefined && clock.remainingMs() > pollMs) {
+      await sleep(pollMs, clock.signal);
+      const second = await capture();
+      const next = shapeOf(second);
+      const confirmed = next === shape && !transitional(second) ? options.local.match(second) : undefined;
+      if (typeof confirmed === 'object' && confirmed.stableTarget === ready.stableTarget) {
+        options.local.accepted();
+        return second;
+      }
+      value = second;
+      shape = next;
+      if (shape === undefined) return value;
+    }
+  }
+  if (changedFrom !== undefined) {
     const changeShapeOf = options.changeShapeOf ?? shapeOf;
+    let inTransition = transitional(value);
+    let effectShape = changeShapeOf(value);
+    let stable = false;
     while (
-      (changeShapeOf(value) === options.changedFrom.shape || transitional(value)) &&
-      Date.now() < options.changedFrom.deadlineMs &&
+      (effectShape === changedFrom.shape || inTransition) &&
+      Date.now() < changedFrom.deadlineMs &&
       clock.remainingMs() > pollMs
     ) {
       await sleep(pollMs, clock.signal);
       value = await capture();
-      shape = shapeOf(value);
-      if (shape === undefined) return value;
+      const next = shapeOf(value);
+      if (next === undefined) return value;
+      const wasInTransition = inTransition;
+      inTransition = transitional(value);
+      stable = next === shape && !wasInTransition && !inTransition;
+      shape = next;
+      effectShape = changeShapeOf(value);
     }
+    if (stable && effectShape === changedFrom.shape) return value;
   }
   const deadlineMs = Date.now() + options.stableWaitMs;
   while (Date.now() < deadlineMs && clock.remainingMs() > pollMs) {
@@ -885,7 +945,7 @@ export async function settleObservation<T>(
     if (next === undefined) return value;
     const stable = next === shape;
     shape = next;
-    if (stable && (options.changedFrom === undefined || !transitional(value))) break;
+    if (stable && (changedFrom === undefined || !transitional(value))) break;
   }
   return value;
 }

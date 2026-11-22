@@ -1,3 +1,4 @@
+import { localFormOpening, type LocalFormCheck } from './replay-form.ts';
 /**
  * One step's trace-cache session: key
  * derivation, the replay attempt, live recording, and the stage-or-evict
@@ -44,6 +45,10 @@ import { bound } from '../internal/text.ts';
  * location and evidence kind, so path checks need no separate observation.
  */
 export interface StepCacheHost extends ReplayHost {
+  /** The complete semantic look in hand, without another engine read. */
+  readonly currentScreen?: SemanticScreen | undefined;
+  /** Optional comparison with the last completed step, verified on a new capture. */
+  adjacentOpening?(trace: ActionTrace): LocalFormCheck | undefined;
   /**
    * Tells the step's live progress the cache has the step (`true`) or has
    * handed it to the model (`false`), so a reporter can show the cache at
@@ -174,6 +179,8 @@ export class StepTraceSession {
    * no anchors and would replay on mechanics alone.
    */
   private startNodes: ObservedNodes | undefined;
+  private firstActionStarted = false;
+  private firstActionScreen: SemanticScreen | undefined;
   /**
    * True once the cache finished the step on its own: every recorded action
    * replayed and the recorded end state held. Such a step stages its entry
@@ -213,6 +220,25 @@ export class StepTraceSession {
   /** The mid-step hand-off, when a replay diverged after real progress. */
   get replayedPrefix(): ReplayedPrefix | undefined {
     return this.prefix;
+  }
+
+  /** Freeze the first pre-dispatch screen. A known undispatched attempt can release it for relocation. */
+  actionStarting(): (() => void) | undefined {
+    if (this.firstActionStarted) return undefined;
+    const openingNodes = this.startNodes;
+    this.firstActionStarted = true;
+    const before = this.host.currentScreen;
+    this.firstActionScreen = before;
+    // Keep a missing opening baseline unrecordable. If the app changed route
+    // before we acted, the recording cannot attribute that navigation to us.
+    if (this.startNodes !== undefined) {
+      this.startNodes = before !== undefined && this.startPath === before.path ? before.nodes : undefined;
+    }
+    return () => {
+      this.firstActionStarted = false;
+      this.firstActionScreen = undefined;
+      this.startNodes = openingNodes;
+    };
   }
 
   /** Records one committed grammar action into the step trace. */
@@ -396,8 +422,8 @@ export class StepTraceSession {
    * doubling as the replay decision's current path, and the baseline screen
    * when this step may write. Settled as far as the capture's purpose asks.
    */
-  private async captureStart(purpose: StartPurpose): Promise<ObservedScreen | undefined> {
-    const observation = await probeScreen(this.host, purpose === 'path-only' ? 'raw' : 'held-still', true);
+  private async captureStart(purpose: StartPurpose, local?: LocalFormCheck): Promise<ObservedScreen | undefined> {
+    const observation = await probeScreen(this.host, purpose === 'path-only' ? 'raw' : 'held-still', true, local);
     this.startPath = observation?.path;
     if (this.recorder !== undefined && observation?.kind === 'semantic') this.startNodes = observation.nodes;
     return observation;
@@ -413,7 +439,7 @@ export class StepTraceSession {
    * capturing the same screen again.
    */
   private async replayEntry(entry: TraceEntry): Promise<StepVerdict | undefined> {
-    const start = await this.captureStart('replay-start');
+    const start = await this.captureStart('replay-start', localFormOpening(entry.payload) ?? this.host.adjacentOpening?.(entry.payload));
     const trace = entry.payload;
     this.recordedBy = trace.recordedBy;
     if (!this.host.traceEligible) {
@@ -433,14 +459,16 @@ export class StepTraceSession {
     const screens: ObservedScreen[] = start === undefined ? [] : [start];
     const onEndRoute = (screen: ObservedScreen | undefined) =>
       screen !== undefined && (trace.endPath === undefined || (screen.path !== undefined && sameRoute(screen.path, trace.endPath)));
+    let preActionLooks = screens.length;
     const host = this.host;
     const watched: ReplayHost = {
       get traceEligible() {
         return host.traceEligible;
       },
-      observe: async (mode) => {
-        const screen = await host.observe(mode);
+      observe: async (mode, local) => {
+        const screen = await host.observe(mode, local);
         screens.push(screen);
+        if (!this.firstActionStarted) preActionLooks = screens.length;
         return screen;
       },
       actions: host.actions,
@@ -451,8 +479,12 @@ export class StepTraceSession {
       ...(start?.kind === 'semantic' ? { initial: start } : {}),
       looksBeforeFree: () => !onEndRoute(screens.at(-1)),
     });
+    // A target can appear after the opening look. Replace only the looks
+    // before dispatch; subsequent route changes still delimit the end evidence.
+    if (this.firstActionScreen !== undefined) screens.splice(0, preActionLooks, this.firstActionScreen);
     this.consumedReplay = true;
-    const end = outcome.completed && start?.kind === 'semantic' ? await this.endStateMatches(trace, start, screens) : undefined;
+    const before = this.firstActionStarted ? this.firstActionScreen : start;
+    const end = outcome.completed && before?.kind === 'semantic' ? await this.endStateMatches(trace, before, screens) : undefined;
     const stopReason: HandOffReason | undefined = outcome.completed
       ? end?.matches === true
         ? undefined
@@ -816,9 +848,9 @@ function baselineScreen(screens: readonly ObservedScreen[], endPath: string | un
  * first look reads the same screen under the same policy, and would spend
  * another operation budget to be denied again.
  */
-async function probeScreen(host: StepCacheHost, mode: SettleMode, opening = false): Promise<ObservedScreen | undefined> {
+async function probeScreen(host: StepCacheHost, mode: SettleMode, opening = false, local?: LocalFormCheck): Promise<ObservedScreen | undefined> {
   try {
-    return await host.observe(mode);
+    return await host.observe(mode, local);
   } catch (cause) {
     if (isRuntimeHardStop(cause) || (opening && isAgentError(cause) && cause.code === 'POLICY_DENIED')) throw cause;
     return undefined;

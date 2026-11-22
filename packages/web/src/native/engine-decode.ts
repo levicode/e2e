@@ -60,9 +60,25 @@ function node(value: unknown, depth = 0): SemanticNode {
   // All admitted fields have been projected and validated above.
   return result;
 }
+function replayControls(value: unknown): NonNullable<NativeObservation['replayControls']> {
+  const entries = Object.entries(record(value));
+  if (entries.length > 256) invalid();
+  return Object.fromEntries(entries.map(([id, val]) => {
+    const item = record(val);
+    const owner = text(item['owner']), target = text(item['target']);
+    if (!/^@e[1-9][0-9]*$/u.test(id) || !/^[a-f0-9]{64}$/u.test(owner) || !/^[a-f0-9]{64}$/u.test(target)) return invalid();
+    const kind = item['kind'];
+    const stable = item['stable'] === undefined ? {} : { stable: bool(item['stable']) };
+    const fields = Object.keys(item).length - Object.keys(stable).length;
+    if (kind === 'radio' && fields === 5) return [id, { owner, target, kind, ...stable, checked: bool(item['checked']), hovered: bool(item['hovered']) }];
+    if ((kind === 'button' || kind === 'field') && fields === 3) return [id, { owner, target, kind, ...stable }];
+    return invalid();
+  }));
+}
 function observation(value: unknown): NativeObservation {
   const item = record(value);
   return { ...scoped(item), revision: text(item['revision']), root: node(item['root']), viewport: viewport(item['viewport']),
+    ...(item['replayControls'] === undefined ? {} : { replayControls: replayControls(item['replayControls']) }),
     ...(item['viewportRef'] === undefined ? {} : { viewportRef: node({ ref: item['viewportRef'] }).ref }),
     ...(item['location'] === undefined ? {} : { location: text(item['location']) }),
     ...(item['truncated'] === undefined ? {} : { truncated: bool(item['truncated']) }),

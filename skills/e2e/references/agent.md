@@ -324,6 +324,13 @@ selectors: the runner validates and authorizes every tool call first.
 
 ## The replay cache
 
+缓存回放读取语义树时遇到节点失效，会把刚才读取的耗时计入轮询间隔。页面刷新期间可在运行轨迹中查看这次重读。
+
+相邻的表单动作可用当前控件状态提前结束等待。查看观察事件中的 `replay-local-confirmed` 和 `replay-local-fallback`，即可区分控件状态已确认和常规页面等待。阶段结束时仍核对录制结果。 两段回放之间调用过 `browser.evaluate` 时，可查看 `replay-handoff-confirmed` 或 `replay-handoff-fallback`。前者要求重新读取的整页和上次终态一致，且当前文档中唯一的点击目标通过原生两次取样。
+
+录制或回放时，以第一个动作执行前最后一次完整观察衡量页面变化。如果旧记录只反映了页面加载，严格回放会在动作执行后报告 `end-mismatch`，应重录对应阶段。
+
+
 Replay reports expose the original model as `step.cache.recordedBy` when
 available; older recordings omit it. Use `--no-cache` to evaluate a new model.
 
@@ -342,7 +349,8 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   plain-value `expect`, `expect.poll`, `agent.extract`, another `act`, or
   the attempt passing confirms nothing.
 - A replay needs the app on the recorded route (origin, path, and query,
-  ids and tokens aside; unless the recording opens with a navigation),
+  including the path of a `#/...` route, ids and tokens aside, unless the
+  recording opens with a navigation),
   re-finds each control by role, name, test id, placeholder, input purpose,
   its page `id` or `class` when it is an unnamed action target such as an
   icon button, the one text its container holds beside it (a chip's label

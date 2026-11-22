@@ -197,6 +197,8 @@ matches the screen.
 
 ## How a replay works
 
+页面在回放读取期间重新渲染、导致节点失效时，框架会重新读取最新的语义树。两次读取的启动间隔包含上一次读取已经用掉的时间。快速失败时仍按原间隔轮询，读取超过间隔时可以立即重试。
+
 1. Check the starting screen: it must be the same route.
 2. Find each recorded control by role, name, test id, and surrounding
    context, and repeat its action. An unnamed action target, such as an icon
@@ -213,11 +215,16 @@ matches the screen.
 Typed values replay as recorded. A secret fill resolves the current value
 by name and goes through authorization again.
 
+录制与回放都使用第一次执行动作前最后一次完整观察作为起点。如果开场只显示加载提示，等到目标出现才点击，那么点击前已经出现的导航和列表不会算作这次操作的结果。旧记录若只保存了这些变化，严格回放会报告 `end-mismatch`，需要重新录制该阶段。
+
+连续命中回放时，上一阶段结束的页面形状可以用作稳定性检查的第一个样本。两个阶段相隔很短时，下一阶段只等完剩余采样间隔，再从当前页面定位控件。中间执行了其他动作、页面发生变化或样本过期时，会重新采样。
+
+同一测试的两段回放之间执行了 `browser.evaluate` 时，下一段若以点击表单控件开始，会尝试复用上一段的终态。框架会读取当前完整页面，在整页内重新定位唯一控件，并比较路由、视口、节点树、布局和表单状态。原生浏览器还要在当前文档内两次确认实际控件。含页面自建 Shadow DOM 的文档使用常规观察。采样期间新挂载 Shadow DOM 会触发重新读取。全部吻合时，报告的观察事件标记 `replay-handoff-confirmed`，这一步可以省去一次整页读取。证据变化时会继续常规采样，标记 `replay-handoff-fallback`。点击使用当前观察签发的引用，结束时继续校验录制的终态。
+
+连续操作同一表单时，原生浏览器可以用控件的实际状态结束等待。例如，鼠标已经悬停在下一步要点击的单选标签上，或者切换同一表单的选项后两个单选框的选中状态已互换。若录制显示某个输入框由有值变为空，点击后续按钮前还会复查该字段。页面重建了输入框时，框架在同一表单内重新定位，两次取样必须指向同一个新控件。报告的观察事件用 `replay-local-confirmed` 标识命中，用 `replay-local-fallback` 标识转入常规页面等待。录制以悬停开始，且所有目标控件与初始字段值均通过两次采样时，开场观察会标记 `replay-opening-confirmed`。动作的文档与权限检查、阶段终态与业务断言照常执行。已有录制可直接使用。
+
 <Accordion title="What counts as the same route">
-A route is the origin, the path, and the query. The record id and the
-fragment don't count. Ids, tokens, timestamps, and cache busters in the
-path or the query read as an id placeholder, so `/orders/42?t=1727780000`
-and `/orders/7?t=1727780999` are one route.
+路由由来源、路径和查询参数组成。应用使用 `#/...` 路由时，取井号后的路径，并一起比较文档和路由的查询参数。普通锚点片段不参与比较。路径或查询参数中的 ID、令牌、时间戳和缓存破坏参数会归为占位符，因此 `/orders/42?t=1727780000` 和 `/orders/7?t=1727780999` 属于同一路由。若升级引擎后，页面开始报告旧引擎遗漏的井号路由，原来只记录文档路径的条目需要在新引擎上重新录制。
 
 Every other query value is part of the route: `?mode=safe` and
 `?mode=unsafe` differ, and so do `/companies` and `/companies?tab=notes`, or
@@ -233,6 +240,7 @@ page on any other origin is another route.
 - At least one recorded change must happen during the replay. An outcome
   already on screen before the actions proves nothing. When the step's last
   action moved to another route, that move is the evidence.
+  首次点击若因节点失效而重新定位，回放以重试前的页面为准。模型文本达到字节上限时，回放仍可用引擎已完整采集的节点核验结果。
 - An alert that the replay raised and the recording never saw stops the
   replay. The web engine does not observe Next.js App Router's route
   announcer, so its title echo never counts.
@@ -243,7 +251,7 @@ page on any other origin is another route.
   the same on replay when the step made it appear on the screen it acted
   on. A count that only moved (`41 items` to `42 items`), one on a screen the
   step navigated to, and a bare number such as a badge are skipped the same
-  way.
+  way. 中文计数（如 `20 条记录`）按相同规则处理。
 - A control with no name is found by the page's own `id`, or its `class`
   when there is no id. With neither, it is found by its place among the
   unnamed controls of its kind inside the same named row, list item, or

@@ -889,6 +889,74 @@ describe('settleObservation', () => {
     expect(source.calls()).toBe(3);
   });
 
+  it('uses a matching recent sample to settle after one fresh capture', async () => {
+    const source = scripted(['current', 'changed']);
+    const value = await settleObservation(source.capture, (v) => v, clock, {
+      ...fast, prior: { capturedAt: Date.now() - fast.pollMs, matches: (_value, shape) => shape === 'current' },
+    });
+    expect(value).toBe('current');
+    expect(source.calls()).toBe(1);
+  });
+
+  it('spaces the first fresh look from a just-finished replay', async () => {
+    vi.useFakeTimers();
+    try {
+      const previous = Date.now();
+      const calls: number[] = [];
+      const run = settleObservation(async () => { calls.push(Date.now() - previous); return 'screen'; }, v => v, clock, {
+        ...fast, prior: { capturedAt: previous, matches: () => true },
+      });
+      await vi.runAllTimersAsync();
+      expect(await run).toBe('screen');
+      expect(calls).toEqual([fast.pollMs]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes two fresh looks when the prior replay sample expired', async () => {
+    const source = scripted(['current']);
+    await settleObservation(source.capture, v => v, clock, {
+      ...fast, prior: { capturedAt: Date.now() - fast.stableWaitMs - 1, matches: () => true },
+    });
+    expect(source.calls()).toBe(2);
+  });
+
+  it('discards a prior sample that expires during the fresh capture', async () => {
+    vi.useFakeTimers();
+    try {
+      const previous = Date.now() - fast.pollMs;
+      const source = scripted(['old', 'new', 'new']);
+      const result = settleObservation(async () => {
+        if (source.calls() === 0) vi.setSystemTime(Date.now() + fast.stableWaitMs + 1);
+        return source.capture();
+      }, value => value, clock, { ...fast, prior: { capturedAt: previous, matches: () => true } });
+      await vi.runAllTimersAsync();
+      expect(await result).toBe('new');
+      expect(source.calls()).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('polls normally when the fresh screen differs from the prior sample', async () => {
+    const source = scripted(['first', 'second', 'second']);
+    const value = await settleObservation(source.capture, (v) => v, clock, {
+      ...fast, prior: { capturedAt: Date.now() - fast.pollMs, matches: (_value, shape) => shape === 'previous' },
+    });
+    expect(value).toBe('second');
+    expect(source.calls()).toBe(3);
+  });
+
+  it('does not use a matching prior sample to skip a pending change', async () => {
+    const source = scripted(['old', 'new', 'new']);
+    const value = await settleObservation(source.capture, (v) => v, clock, {
+      ...fast, changedFrom: leaving(), prior: { capturedAt: Date.now() - fast.pollMs, matches: (_value, shape) => shape === 'old' },
+    });
+    expect(value).toBe('new');
+    expect(source.calls()).toBe(3);
+  });
+
   it('accepts a stable empty screen when no action is pending', async () => {
     const source = scripted(['', '', 'new']);
     const value = await settleObservation(source.capture, (v) => v, clock, {
@@ -899,7 +967,7 @@ describe('settleObservation', () => {
     expect(source.calls()).toBe(2);
   });
 
-  it('counts a slow first capture toward the change window, then still checks stability', async () => {
+  it('reuses matching live samples from the change wait as the stability check', async () => {
     vi.useFakeTimers();
     try {
       const started = Date.now();
@@ -915,8 +983,27 @@ describe('settleObservation', () => {
       });
       await vi.runAllTimersAsync();
       expect(await pending).toBe('old');
-      expect(Date.now() - started).toBe(1_400);
-      expect(captures).toBe(3);
+      expect(Date.now() - started).toBe(900);
+      expect(captures).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still checks stability when the two samples agree only about the action change', async () => {
+    vi.useFakeTimers();
+    try {
+      const started = Date.now();
+      const source = scripted(['old:before', 'old:after', 'old:stable', 'old:stable']);
+      const pending = settleObservation(source.capture, (value) => value, clock, {
+        changedFrom: { shape: 'old', deadlineMs: started + 100 },
+        changeShapeOf: (value) => value.split(':')[0],
+        pollMs: 100,
+        stableWaitMs: 1_000,
+      });
+      await vi.runAllTimersAsync();
+      expect(await pending).toBe('old:stable');
+      expect(source.calls()).toBe(4);
     } finally {
       vi.useRealTimers();
     }

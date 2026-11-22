@@ -148,7 +148,12 @@ attemptCleanupContext.reuseSignal;
   async dispose(_context: EngineCleanupContext) {},
 }) satisfies Engine;
 
-({ pixels: false, pixelFallback: true }) satisfies EngineObserveOptions;
+({ pixels: false, pixelFallback: true, sampleReplayForm: true }) satisfies EngineObserveOptions;
+// @ts-expect-error Sampling is a harness-selected flag.
+({ sampleReplayForm: 'auto' }) satisfies EngineObserveOptions;
+({ kind: 'field', target: 't', owner: 'o' }) satisfies NonNullable<EngineSnapshot['replayControls']>[string];
+// @ts-expect-error A sampled radio must carry its observed checked and hovered states.
+({ kind: 'radio', target: 't', owner: 'o', stable: true }) satisfies NonNullable<EngineSnapshot['replayControls']>[string];
 interface CustomSnapshot extends EngineSnapshot { readonly projectMetadata?: string }
 interface CustomExecutorObservation extends ExecutorObservation { readonly projectMetadata?: string }
 declare const customSnapshot: CustomSnapshot;

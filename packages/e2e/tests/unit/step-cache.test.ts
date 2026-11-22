@@ -823,6 +823,46 @@ describe('StepTraceSession', () => {
     expect(query.replayedPrefix?.stopReason).toBe('end-mismatch');
   });
 
+  it('records only changes after a loaded form was available for its first action', async () => {
+    const submit: SemanticNode = { ref: { id: 'submit', revision: 'r1' }, role: 'button', name: 'Submit' };
+    const home: SemanticNode = { ref: { id: 'home', revision: 'r1' }, role: 'link', name: 'Home' };
+    const loading: SemanticNode = { ref: { id: 'load', revision: 'r1' }, role: 'status', name: 'Loading' };
+    const ready = { kind: 'semantic' as const, path: '/form', viewport: { width: 800, height: 600 }, nodes: nodeMap([submit, home]) };
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    const session = makeSession(cache, {
+      ...makeHost(['/form', '/form'], [[loading], [submit, home, savedMarker]]),
+      currentScreen: ready,
+    });
+    await session.begin();
+    session.actionStarting();
+    session.record({ name: 'tap', node: redacted(submit) });
+    await session.conclude('passed', 'saved');
+    expect(stagedTrace(cache).endAnchors).toEqual([savedAnchor]);
+    expect(stagedTrace(cache).goneAnchors ?? []).toEqual([]);
+  });
+
+  it('declines recording if the complete pre-action screen was lost after opening', async () => {
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    const session = makeSession(cache, makeHost(['/form', '/form'], [[], [savedMarker]]));
+    await session.begin();
+    session.actionStarting();
+    session.record({ name: 'pressKey', key: 'Enter' });
+    await session.conclude('passed', 'saved');
+    expect(cache.staged).toEqual([]);
+  });
+
+  it('denies an old end anchor that appeared while replay was locating its first action', async () => {
+    const submit: SemanticNode = { ref: { id: 'submit', revision: 'r1' }, role: 'button', name: 'Submit' };
+    const ready = { kind: 'semantic' as const, path: '/form', viewport: { width: 800, height: 600 }, nodes: nodeMap([submit, savedMarker]) };
+    const host = makeHost(['/form', '/form', '/form'], [[], [submit, savedMarker], [submit, savedMarker]]);
+    const cache = entryContext({ actions: [{ name: 'tap', summary: 'tap Submit', target: { role: 'button', name: 'Submit' } }],
+      startPath: '/form', endPath: '/form', endAnchors: [savedAnchor] });
+    const session = makeSession(cache, { ...host, currentScreen: ready, remainingMs: () => 5_000,
+      actions: { tap: async () => session.actionStarting() } as unknown as ExecutorActions });
+    expect(await session.begin()).toBeUndefined();
+    expect(session.cacheInfo).toMatchObject({ reason: 'end-mismatch', replayedActions: 1 });
+  });
+
   it('hands off when the recorded delta did not happen during the replay', async () => {
     const draft: SemanticNode = { ref: { id: 'd', revision: 'r1' }, role: 'status', name: 'Marker', text: 'draft' };
     const draftAnchor = { role: 'status', name: 'Marker', text: 'draft' };

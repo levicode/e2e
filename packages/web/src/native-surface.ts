@@ -48,6 +48,8 @@ interface Listener { readonly callback: (event: BrowserEventMap[keyof BrowserEve
 interface ResourceCallbackOwner { attempt: Attempt; epoch: number; notRevoked: () => boolean; cleanupFailure?: Error }
 interface PendingConnection { work: Promise<void>; cleanupFailure?: unknown }
 interface DownloadFileCustody { retiring: boolean; readonly settled: Promise<void> }
+const formSampleClients = new WeakSet<NativeClient>();
+
 interface Attempt {
   epoch: number;
   ready: boolean;
@@ -1280,10 +1282,17 @@ export class NativeSurface implements NativeWebSurface {
     operation = { ...admitted.operation, get timeoutMs() { return Math.min(admitted.operation.timeoutMs, original.timeoutMs, deadline - performance.now()); } };
     const attempt = this.requireAttempt(); const scope = attempt.scope; const engine = this.requireEngine();
     const epoch = attempt.epoch; const client = this.requireClient(); const publication = client.publicationCheckpoint();
+    const { sampleReplayForm, ...ordinary } = options;
+    if (sampleReplayForm === true && !formSampleClients.has(client)) options = ordinary;
     const args = { identityScope: scope, options, testIdAttribute: this.options.testIdAttribute ?? 'data-testid', secureFieldSelector: SECURE_FIELD_SELECTOR };
     let readArgs = args;
-    const reacquire = async () => {
-      await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication);
+    const reacquire = async (waitBeforeRead: boolean) => {
+      if (waitBeforeRead) {
+        await this.waitForReadReacquisition(operation, attempt, scope, epoch, client, publication);
+      } else {
+        this.assertObservationOwner(attempt, scope, epoch, client);
+        this.assertPublication(client, publication); this.assertBudget(operation);
+      }
       return this.engineCommand('browser.observe', readArgs, operation);
     };
     let snapshot;
@@ -1294,7 +1303,7 @@ export class NativeSurface implements NativeWebSurface {
         // Only the optional pixels lost their references. The tree-only read
         // still needs the same settlement and ownership checks on refusal.
         readArgs = { ...args, options: { ...options, pixels: false } };
-        snapshot = await reacquire();
+        snapshot = await reacquire(true);
       }
     } catch (cause) {
       const continuation = takeObservationContinuation(cause);
@@ -1304,7 +1313,8 @@ export class NativeSurface implements NativeWebSurface {
         this.assertPublication(client, publication); this.assertBudget(operation);
         snapshot = await this.engineCommand('browser.observe', { ...readArgs, continuation }, operation);
       } else if (isCleanReadRefusal(cause)) {
-        try { snapshot = await reacquire(); }
+        // For a tree-only read native waits on pending frame enrollment itself.
+        try { snapshot = await reacquire(optionalPixels); }
         catch (second) {
           // The first document capture can race both frame discovery and the
           // later attach/resume boundary. After either clean refusal the next
@@ -1313,13 +1323,14 @@ export class NativeSurface implements NativeWebSurface {
           if (readArgs !== args
             || (published?.epoch === epoch && published.scope === scope && published.client === client)
             || !isCleanReadRefusal(second)) throw second;
-          snapshot = await reacquire();
+          snapshot = await reacquire(optionalPixels);
         }
       } else throw cause;
     }
     this.assertObservationOwner(attempt, scope, epoch, client);
     const revision = observationRevision(snapshot.revision);
     if (snapshot.identityScope !== scope || (snapshot.pixels !== undefined && snapshot.pixels.identityScope !== scope) || revision === undefined) throw client.invalidate();
+    if (snapshot.replayControls && Object.values(snapshot.replayControls).some(control => control.stable !== undefined)) formSampleClients.add(client);
     // Native publication, not local admission or transfer completion, advances this scalar.
     let highWater = attempt.observationHighWater;
     if (publication === client.publicationCheckpoint()) {
@@ -1344,6 +1355,7 @@ export class NativeSurface implements NativeWebSurface {
     // Only this complete public return grants point input, never a partial capture.
     attempt.recoveryObservationRequired = false;
     return { identityScope: scope, root: references.nodes[0]!, viewport: snapshot.viewport,
+      ...(snapshot.replayControls === undefined ? {} : { replayControls: snapshot.replayControls }),
       ...(references.viewport === undefined ? {} : { viewportRef: references.viewport }),
       ...(snapshot.location === undefined ? {} : { location: snapshot.location }),
       ...(snapshot.truncated === undefined ? {} : { truncated: snapshot.truncated }),
