@@ -61,7 +61,15 @@ step over at a recorded [gap](#limits-and-gaps) or when the app changed.
 has no target a replay can re-find`, because the next run refuses that entry
 before any action.
 
-A step that took no action records nothing and reports no `write`.
+A step that took no action records nothing and reports no `write`. A passing
+step that acted but has nothing staged names the cause in
+`step.cache.notRecorded` when it has one: `param-collision` (see
+[What must match](#what-must-match)), or `observation-truncated` when the
+engine's semantic tree left nodes out before the step's first action, so
+there was no start baseline. Such a step also reports
+`observationTruncated: true`. A tree the engine truncated during the step,
+after a complete start baseline, is still staged; the delta it records can
+be incomplete.
 
 A failing attempt still saves the steps verified before the failure. It
 deletes unverified entries and the replays involved in the failure. A custom store needs a `delete` method for this. Cancelling

@@ -308,6 +308,10 @@ describe.each(schemas)('%s schema', (name) => {
       const steps = report.run.results.flatMap((result) => result.attempts.flatMap((attempt) => attempt.steps));
       const cache = steps.find((step) => step.cache?.notRecorded !== undefined)!.cache!;
       expect(cache).toMatchObject({ mode: 'missed', notRecorded: 'param-collision' });
+      // The fixture carries both reasons the producer can emit.
+      expect(steps.find((step) => step.cache?.notRecorded === 'observation-truncated')!.cache).toMatchObject({ mode: 'missed', reason: 'no-entry' });
+      expect(validate(report)).toBe(true);
+      cache.notRecorded = 'observation-truncated';
       expect(validate(report)).toBe(true);
       cache.notRecorded = 'guessed';
       expect(validate(report)).toBe(false);

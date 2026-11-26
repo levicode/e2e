@@ -47,6 +47,12 @@ import { bound } from '../internal/text.ts';
 export interface StepCacheHost extends ReplayHost {
   /** The complete semantic look in hand, without another engine read. */
   readonly currentScreen?: SemanticScreen | undefined;
+  /**
+   * True when that look exists but the engine left nodes out of it, which is
+   * why `currentScreen` is absent: the tree cannot serve as a start baseline,
+   * because a node it omitted would read as one the step made appear.
+   */
+  readonly currentScreenTruncated?: boolean;
   /** Optional comparison with the last completed step, verified on a new capture. */
   adjacentOpening?(trace: ActionTrace): LocalFormCheck | undefined;
   /**
@@ -179,6 +185,13 @@ export class StepTraceSession {
    * no anchors and would replay on mechanics alone.
    */
   private startNodes: ObservedNodes | undefined;
+  /**
+   * True when the first action dropped the start baseline because the engine's
+   * tree left nodes out. The step still runs, but a recording from what is left
+   * would anchor on a delta nobody can trust, so staging skips it and the
+   * report says why (`notRecorded`).
+   */
+  private lostTruncatedBaseline = false;
   private firstActionStarted = false;
   private firstActionScreen: SemanticScreen | undefined;
   /**
@@ -226,18 +239,24 @@ export class StepTraceSession {
   actionStarting(): (() => void) | undefined {
     if (this.firstActionStarted) return undefined;
     const openingNodes = this.startNodes;
+    const openingTruncation = this.lostTruncatedBaseline;
     this.firstActionStarted = true;
     const before = this.host.currentScreen;
     this.firstActionScreen = before;
     // Keep a missing opening baseline unrecordable. If the app changed route
     // before we acted, the recording cannot attribute that navigation to us.
     if (this.startNodes !== undefined) {
-      this.startNodes = before !== undefined && this.startPath === before.path ? before.nodes : undefined;
+      const usable = before !== undefined && this.startPath === before.path;
+      this.startNodes = usable ? before.nodes : undefined;
+      // Only the engine's own truncation is named: an absent look of any other
+      // kind is what `traceEligible` already covers.
+      this.lostTruncatedBaseline = !usable && before === undefined && this.host.currentScreenTruncated === true;
     }
     return () => {
       this.firstActionStarted = false;
       this.firstActionScreen = undefined;
       this.startNodes = openingNodes;
+      this.lostTruncatedBaseline = openingTruncation;
     };
   }
 
@@ -630,7 +649,19 @@ export class StepTraceSession {
    * route: a trace without its check would replay on mechanics alone.
    */
   private async stage(recorder: TraceRecorder, verdictSummary: string | undefined, recordedBy: RecordedModel | undefined): Promise<StageOutcome> {
-    if (!this.host.traceEligible || this.startNodes === undefined || recorder.recordedCount === 0) return 'skipped';
+    // The engine's truncation cost this step the baseline, and only that: a
+    // lost look, or an action that never committed, is a different skip.
+    const baselineLostToTruncation = this.host.traceEligible && this.lostTruncatedBaseline &&
+      this.startNodes === undefined && recorder.recordedCount > 0;
+    if (!this.host.traceEligible || this.startNodes === undefined || recorder.recordedCount === 0) {
+      // A step that acted but lost its baseline to the engine's truncation has
+      // nothing a replay could check. The report says so, rather than reading
+      // like a step the cache never reached the write for.
+      if (baselineLostToTruncation && this.info !== undefined) {
+        this.info = { ...this.info, notRecorded: 'observation-truncated' };
+      }
+      return 'skipped';
+    }
     const observation = await probeScreen(this.host, 'held-still');
     if (!this.host.traceEligible || observation?.kind !== 'semantic') return 'skipped';
     const { nodes: endNodes, path: endPath } = observation;

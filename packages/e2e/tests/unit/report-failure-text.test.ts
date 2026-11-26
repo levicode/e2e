@@ -217,6 +217,21 @@ describe('renderTracePage', () => {
     expect(kept).not.toContain('no target a replay can re-find');
   });
 
+  it('says when a passing step was not recorded because the engine truncated its tree', () => {
+    const truncated = page([
+      failed({ steps: [step({ index: 0, kind: 'agent', api: 'agent.act', cache: {
+        mode: 'missed',
+        reason: 'no-entry',
+        notRecorded: 'observation-truncated',
+        replayedActions: 0,
+        totalActions: 2,
+      } })] }),
+    ]);
+    expect(truncated).toContain(
+      'nothing recorded: the engine truncated the semantic tree before the first action, so there is no baseline a replay could check',
+    );
+  });
+
   it('quotes a step explanation that starts like a heading as prose, with its linkable tokens as code, through the shared cell', () => {
     const body = page([
       failed({

@@ -539,6 +539,10 @@ class ActDispatch {
         const latest = feed.latest;
         return latest?.kind === 'semantic' && !latest.treeTruncated ? screenOf(latest, origin) : undefined;
       },
+      get currentScreenTruncated() {
+        const latest = feed.latest;
+        return latest?.kind === 'semantic' && latest.treeTruncated === true;
+      },
       get traceEligible() { return feed.traceEligible; },
       adjacentOpening: trace => prior?.evaluated && prior.screen ? adjacentFormOpening(prior.screen, trace, prior.sample.capturedAt) : undefined,
       observe: async (mode, local) => {

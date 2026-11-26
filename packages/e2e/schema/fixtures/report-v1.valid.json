@@ -361,6 +361,38 @@
                     "outcome": "Tapped #n19.\nScreen changes: 4 added."
                   }
                 ]
+              },
+              {
+                "id": "018f0f5c-7b2a-7abc-8abc-2123456789ab:1",
+                "index": 1,
+                "kind": "agent",
+                "api": "agent.act",
+                "label": "searches the long list",
+                "source": {
+                  "file": "tests/example.e2e.ts",
+                  "line": 12,
+                  "column": 1
+                },
+                "status": "passed",
+                "startedAt": "2026-07-24T12:00:05.000Z",
+                "durationMs": 1200,
+                "observationTruncated": true,
+                "events": [],
+                "metrics": {
+                  "modelCalls": 0,
+                  "actionSteps": 2,
+                  "observationBytes": 0,
+                  "contextBytes": 0,
+                  "ledgerBytes": 0
+                },
+                "cache": {
+                  "mode": "missed",
+                  "reason": "no-entry",
+                  "notRecorded": "observation-truncated",
+                  "replayedActions": 0,
+                  "totalActions": 0
+                },
+                "artifacts": []
               }
             ],
             "artifacts": [
