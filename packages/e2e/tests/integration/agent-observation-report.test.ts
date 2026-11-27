@@ -114,7 +114,7 @@ const tapSave: StepExecutor = {
 };
 
 /** One read-write run of the recording suite over a tree the engine may cut. */
-async function runRecording(truncated: boolean): Promise<{ outcome: RunOutcome; project: FixtureProject }> {
+async function runRecording(startTruncated: boolean, endTruncated: boolean): Promise<{ outcome: RunOutcome; project: FixtureProject }> {
   let saved = false;
   const engine = defineEngine({
     name: 'truncated-recording-fixture',
@@ -123,7 +123,7 @@ async function runRecording(truncated: boolean): Promise<{ outcome: RunOutcome; 
     platform: 'fixture',
     actions: ['tap'],
     perform: async () => { saved = true; },
-    observe: async () => tapSnapshot(saved, truncated),
+    observe: async () => tapSnapshot(saved, saved ? endTruncated : startTruncated),
   });
   const judge = installFakeModel(() => judgment(true, 'the screen says Saved'));
   return runProject({ 'tests/recording.e2e.ts': RECORDING_SUITE }, {
@@ -137,37 +137,30 @@ async function runRecording(truncated: boolean): Promise<{ outcome: RunOutcome; 
   });
 }
 
-describe('a truncated tree before the first action', () => {
-  let truncated: { outcome: RunOutcome; project: FixtureProject };
-  let complete: { outcome: RunOutcome; project: FixtureProject };
-
-  beforeAll(async () => {
-    truncated = await runRecording(true);
-    complete = await runRecording(false);
-  }, 120_000);
-
-  afterAll(() => {
-    truncated?.project.cleanup();
-    complete?.project.cleanup();
-  });
-
-  it('names the truncation as why the passing step was not recorded', () => {
-    const result = resultByTitle(truncated.outcome, 'acts on the result screen');
-    expect(result.status).toBe('passed');
-    const step = result.attempts[0]!.steps.find((candidate) => candidate.api === 'agent.act')!;
-    expect(step.observationTruncated).toBe(true);
-    expect(step.cache).toMatchObject({ mode: 'missed', reason: 'no-entry', notRecorded: 'observation-truncated' });
-    expect(step.cache?.write).toBeUndefined();
-    assertValidReport(truncated.outcome.report);
-  });
-
-  it('records the same flow unchanged when the engine read the whole tree', () => {
-    const result = resultByTitle(complete.outcome, 'acts on the result screen');
-    expect(result.status).toBe('passed');
-    const step = result.attempts[0]!.steps.find((candidate) => candidate.api === 'agent.act')!;
-    expect(step.observationTruncated).toBeUndefined();
-    expect(step.cache).toMatchObject({ mode: 'missed', reason: 'no-entry', write: 'saved' });
-    expect(step.cache).not.toHaveProperty('notRecorded');
-    assertValidReport(complete.outcome.report);
+describe('cache reporting when the engine truncates either tree', () => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])('records the passing step only with a complete end (partial start %s, partial end %s)', async (startTruncated, endTruncated) => {
+    const { outcome, project } = await runRecording(startTruncated, endTruncated);
+    try {
+      const result = resultByTitle(outcome, 'acts on the result screen');
+      expect(result.status).toBe('passed');
+      const step = result.attempts[0]!.steps.find((candidate) => candidate.api === 'agent.act')!;
+      expect(step.observationTruncated).toBe(startTruncated || endTruncated ? true : undefined);
+      expect(step.cache).toMatchObject({ mode: 'missed', reason: 'no-entry' });
+      if (endTruncated) {
+        expect(step.cache).toHaveProperty('notRecorded', 'observation-truncated');
+        expect(step.cache).not.toHaveProperty('write');
+      } else {
+        expect(step.cache).toHaveProperty('write', 'saved');
+        expect(step.cache).not.toHaveProperty('notRecorded');
+      }
+      assertValidReport(outcome.report);
+    } finally {
+      await project.cleanup();
+    }
   });
 });

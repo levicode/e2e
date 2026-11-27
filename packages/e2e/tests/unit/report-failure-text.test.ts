@@ -228,7 +228,7 @@ describe('renderTracePage', () => {
       } })] }),
     ]);
     expect(truncated).toContain(
-      'nothing recorded: the engine truncated the semantic tree before the first action, so there is no baseline a replay could check',
+      'nothing recorded: the engine truncated the semantic tree and a verifiable change on a complete end screen could not be established',
     );
   });
 

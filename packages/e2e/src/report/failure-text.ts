@@ -286,7 +286,7 @@ const CACHE_WRITE_TEXT: Readonly<Record<NonNullable<StepCacheRecord['write']>, s
 /** Why a step that passed in place was never recorded, in words. */
 const NOT_RECORDED_TEXT: Readonly<Record<NonNullable<StepCacheInfo['notRecorded']>, string>> = {
   'param-collision': 'nothing recorded: a unique() value collides with another param',
-  'observation-truncated': 'nothing recorded: the engine truncated the semantic tree before the first action, so there is no baseline a replay could check',
+  'observation-truncated': 'nothing recorded: the engine truncated the semantic tree and a verifiable change on a complete end screen could not be established',
 };
 
 /** Where an app log line came from, as the page names it. */

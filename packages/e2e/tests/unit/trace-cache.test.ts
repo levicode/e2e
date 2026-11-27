@@ -49,6 +49,16 @@ function entryOf(payload: ActionTrace): TraceEntry {
 }
 
 describe('trace-1 entry', () => {
+  it('preserves an opted-in truncated baseline and keeps old entries unchanged', () => {
+    expect(entryOf(trace({ baselineTruncated: true })).payload.baselineTruncated).toBe(true);
+    expect(entryOf(trace()).payload).not.toHaveProperty('baselineTruncated');
+  });
+
+  it.each([false, null, 'true', 1])('rejects an invalid truncated baseline marker %j', (baselineTruncated) => {
+    const entry = buildTraceEntry(trace());
+    expect(readTraceEntry({ ...entry, payload: { ...entry.payload, baselineTruncated } })).toBeUndefined();
+  });
+
   it.each(['provider', 'model'] as const)('bounds recorded %s without losing the hit', (field) => {
     const recordedBy = { provider: 'test', model: 'A', [field]: 'x'.repeat(300) };
     expect(entryOf(trace({ recordedBy })).payload.recordedBy).toEqual(recordedBy);

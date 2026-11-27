@@ -62,14 +62,16 @@ has no target a replay can re-find`, because the next run refuses that entry
 before any action.
 
 A step that took no action records nothing and reports no `write`. A passing
-step that acted but has nothing staged names the cause in
-`step.cache.notRecorded` when it has one: `param-collision` (see
-[What must match](#what-must-match)), or `observation-truncated` when the
-engine's semantic tree left nodes out before the step's first action, so
-there was no start baseline. Such a step also reports
-`observationTruncated: true`. A tree the engine truncated during the step,
-after a complete start baseline, is still staged; the delta it records can
-be incomplete.
+step can report `step.cache.notRecorded` with `param-collision` (see
+[What must match](#what-must-match)) or `observation-truncated`. The latter
+means the engine cut the end tree or a partial start did not prove a change.
+The step also reports `observationTruncated: true`.
+
+A partial start can record if a complete end proves a route change, a new
+announcement, a `unique()` result, or a changed input with a separate
+removal. Replay checks the recorded anchors on a complete end tree. On the
+same route, replay from a partial start needs a new announcement or
+`unique()` result, or a recorded removal that was visible at the start.
 
 A failing attempt still saves the steps verified before the failure. It
 deletes unverified entries and the replays involved in the failure. A custom store needs a `delete` method for this. Cancelling

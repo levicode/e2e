@@ -537,11 +537,7 @@ class ActDispatch {
     return {
       get currentScreen() {
         const latest = feed.latest;
-        return latest?.kind === 'semantic' && !latest.treeTruncated ? screenOf(latest, origin) : undefined;
-      },
-      get currentScreenTruncated() {
-        const latest = feed.latest;
-        return latest?.kind === 'semantic' && latest.treeTruncated === true;
+        return latest?.kind === 'semantic' ? screenOf(latest, origin) : undefined;
       },
       get traceEligible() { return feed.traceEligible; },
       adjacentOpening: trace => prior?.evaluated && prior.screen ? adjacentFormOpening(prior.screen, trace, prior.sample.capturedAt) : undefined,
@@ -617,6 +613,7 @@ function screenOf(observation: AgentObservation, appOrigin: string | undefined):
   };
   return observation.kind === 'semantic'
     ? { ...metadata, kind: 'semantic', nodes: observation.nodes,
+        ...(observation.treeTruncated ? { truncated: true as const } : {}),
         ...(!observation.truncated && observation.identityScope !== undefined && observation.replayControls !== undefined
           ? { identityScope: observation.identityScope, replayControls: observation.replayControls } : {}) }
     : { ...metadata, kind: 'pixels' };

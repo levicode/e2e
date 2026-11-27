@@ -13,14 +13,14 @@ import { localFormOpening, type LocalFormCheck } from './replay-form.ts';
  * when replay performed no action.
  */
 
-import { deltaEvidenced, deltaMismatch, describeDelta, type DeltaMismatch } from '../cache/anchors.ts';
+import { deltaEvidenced, deltaMismatch, describeDelta, describeDeltaFromTruncatedStart, type DeltaMismatch } from '../cache/anchors.ts';
 import type { AgentCacheContext, ClaimedKey } from '../cache/context.ts';
 import { decideTraceReplay, opensWithNavigate, type TraceReplayMissReason } from '../cache/decide.ts';
 import { sameRoute } from '../cache/route.ts';
 import { keyContextChanges, type CacheAgentIdentity } from '../cache/identity.ts';
 import { recordedProvenance, TraceRecorder, type TraceDefect } from '../cache/recorder.ts';
-import { expandTrace, templateParams, templatesCollide, templateTrace, type ParamTemplate } from '../cache/template.ts';
-import { readTraceEntry, targetLabel, type ActionTrace, type DerivedReason, type RecordedModel, type TraceEntry, type TraceTargetDescriptor } from '../cache/trace.ts';
+import { expandTrace, templateParams, templatesCollide, templateTrace, templateValueMatcher, type ParamTemplate } from '../cache/template.ts';
+import { readTraceEntry, targetLabel, type ActionTrace, type DerivedReason, type RecordedAction, type RecordedModel, type TraceEntry, type TraceTargetDescriptor } from '../cache/trace.ts';
 import { sleep } from '../internal/time.ts';
 import type { StepCacheInfo } from '../run/steps.ts';
 import type { JsonValue } from '../types.ts';
@@ -45,14 +45,8 @@ import { bound } from '../internal/text.ts';
  * location and evidence kind, so path checks need no separate observation.
  */
 export interface StepCacheHost extends ReplayHost {
-  /** The complete semantic look in hand, without another engine read. */
+  /** The latest semantic look in hand, without another engine read. */
   readonly currentScreen?: SemanticScreen | undefined;
-  /**
-   * True when that look exists but the engine left nodes out of it, which is
-   * why `currentScreen` is absent: the tree cannot serve as a start baseline,
-   * because a node it omitted would read as one the step made appear.
-   */
-  readonly currentScreenTruncated?: boolean;
   /** Optional comparison with the last completed step, verified on a new capture. */
   adjacentOpening?(trace: ActionTrace): LocalFormCheck | undefined;
   /**
@@ -185,13 +179,8 @@ export class StepTraceSession {
    * no anchors and would replay on mechanics alone.
    */
   private startNodes: ObservedNodes | undefined;
-  /**
-   * True when the first action dropped the start baseline because the engine's
-   * tree left nodes out. The step still runs, but a recording from what is left
-   * would anchor on a delta nobody can trust, so staging skips it and the
-   * report says why (`notRecorded`).
-   */
-  private lostTruncatedBaseline = false;
+  /** Whether the engine left nodes out of the pre-action baseline. */
+  private startTruncated = false;
   private firstActionStarted = false;
   private firstActionScreen: SemanticScreen | undefined;
   /**
@@ -239,7 +228,7 @@ export class StepTraceSession {
   actionStarting(): (() => void) | undefined {
     if (this.firstActionStarted) return undefined;
     const openingNodes = this.startNodes;
-    const openingTruncation = this.lostTruncatedBaseline;
+    const openingTruncation = this.startTruncated;
     this.firstActionStarted = true;
     const before = this.host.currentScreen;
     this.firstActionScreen = before;
@@ -248,15 +237,13 @@ export class StepTraceSession {
     if (this.startNodes !== undefined) {
       const usable = before !== undefined && this.startPath === before.path;
       this.startNodes = usable ? before.nodes : undefined;
-      // Only the engine's own truncation is named: an absent look of any other
-      // kind is what `traceEligible` already covers.
-      this.lostTruncatedBaseline = !usable && before === undefined && this.host.currentScreenTruncated === true;
+      this.startTruncated = usable && before.truncated === true;
     }
     return () => {
       this.firstActionStarted = false;
       this.firstActionScreen = undefined;
       this.startNodes = openingNodes;
-      this.lostTruncatedBaseline = openingTruncation;
+      this.startTruncated = openingTruncation;
     };
   }
 
@@ -444,7 +431,10 @@ export class StepTraceSession {
   private async captureStart(purpose: StartPurpose, local?: LocalFormCheck): Promise<ObservedScreen | undefined> {
     const observation = await probeScreen(this.host, purpose === 'path-only' ? 'raw' : 'held-still', true, local);
     this.startPath = observation?.path;
-    if (this.recorder !== undefined && observation?.kind === 'semantic') this.startNodes = observation.nodes;
+    if (this.recorder !== undefined && observation?.kind === 'semantic') {
+      this.startNodes = observation.nodes;
+      this.startTruncated = observation.truncated === true;
+    }
     return observation;
   }
 
@@ -498,11 +488,13 @@ export class StepTraceSession {
       ...(start?.kind === 'semantic' ? { initial: start } : {}),
       looksBeforeFree: () => !onEndRoute(screens.at(-1)),
     });
+    // Keep the complete pre-action evidence requirement of older recordings.
+    const first = trace.baselineTruncated === true || this.firstActionScreen?.truncated !== true ? this.firstActionScreen : undefined;
     // A target can appear after the opening look. Replace only the looks
     // before dispatch; subsequent route changes still delimit the end evidence.
-    if (this.firstActionScreen !== undefined) screens.splice(0, preActionLooks, this.firstActionScreen);
+    if (first !== undefined) screens.splice(0, preActionLooks, first);
     this.consumedReplay = true;
-    const before = this.firstActionStarted ? this.firstActionScreen : start;
+    const before = this.firstActionStarted ? first : start;
     const end = outcome.completed && before?.kind === 'semantic' ? await this.endStateMatches(trace, before, screens) : undefined;
     const stopReason: HandOffReason | undefined = outcome.completed
       ? end?.matches === true
@@ -542,7 +534,11 @@ export class StepTraceSession {
     // ledger as it is now, an unchanged node is no change.
     const baseline = baselineScreen(screens, arrived.path);
     const baselineNodes = baseline === undefined ? undefined : redactNodesAgain(baseline.nodes, this.redaction);
-    if (!deltaEvidenced(trace, baselineNodes, inputTargets(trace))) {
+    const truncatedBaseline = trace.baselineTruncated === true && baseline?.truncated === true
+      ? { hasTemplateValue: templateValueMatcher(this.options.templates) }
+      : undefined;
+    if (!deltaEvidenced(trace, baselineNodes, inputTargets(trace.actions), truncatedBaseline)) {
+      if (truncatedBaseline !== undefined) return { matches: false, failure: 'truncated-baseline' };
       // A recording with no delta fails the evidence too, but nothing of it
       // showed before the replay acted: that is the generic detail.
       const recorded = (trace.endAnchors?.length ?? 0) > 0 || (trace.goneAnchors?.length ?? 0) > 0;
@@ -551,25 +547,28 @@ export class StepTraceSession {
     const beforeNodes = baselineNodes ?? redactNodesAgain(start.nodes, this.redaction);
     // Every look the wait takes must still be on the recorded end route: a
     // screen that moved on after the route first matched is another screen.
-    let mismatch: DeltaMismatch | undefined;
+    let failure: DeltaMismatch | 'truncated-end' | undefined;
     const holds = (screen: SemanticScreen) => {
       if (trace.endPath !== undefined && screen.path !== undefined && !sameRoute(screen.path, trace.endPath)) return false;
-      mismatch = deltaMismatch(trace, screen.nodes, beforeNodes);
-      return mismatch === undefined;
+      failure = trace.baselineTruncated === true && screen.truncated === true
+        ? 'truncated-end'
+        : deltaMismatch(trace, screen.nodes, beforeNodes);
+      return failure === undefined;
     };
     const matches = (await verifyEndState(this.host, holds, {
       initial: arrived,
       ...(trace.endWaitMs === undefined ? {} : { waitMs: trace.endWaitMs }),
     })) && this.host.traceEligible;
-    return matches ? { matches } : { matches, ...(mismatch === undefined ? {} : { failure: mismatch }) };
+    return matches ? { matches } : { matches, ...(failure === undefined ? {} : { failure }) };
   }
 
   /**
-   * Captures the semantic end state once its route matches the recording,
+   * Captures an end observation once its route matches the recording,
    * polling while a navigation the last action started commits. A route
    * that never matches is another screen, whatever it shows: a link that
    * now lands on a page sharing the recorded one's layout is exactly the
-   * flow that went wrong.
+   * flow that went wrong. This supplies the first look to the end-state
+   * poll, which checks completeness and anchors on each look.
    */
   private async endScreen(trace: ActionTrace): Promise<SemanticScreen | undefined> {
     const startedMs = Date.now();
@@ -649,27 +648,19 @@ export class StepTraceSession {
    * route: a trace without its check would replay on mechanics alone.
    */
   private async stage(recorder: TraceRecorder, verdictSummary: string | undefined, recordedBy: RecordedModel | undefined): Promise<StageOutcome> {
-    // The engine's truncation cost this step the baseline, and only that: a
-    // lost look, or an action that never committed, is a different skip.
-    const baselineLostToTruncation = this.host.traceEligible && this.lostTruncatedBaseline &&
-      this.startNodes === undefined && recorder.recordedCount > 0;
-    if (!this.host.traceEligible || this.startNodes === undefined || recorder.recordedCount === 0) {
-      // A step that acted but lost its baseline to the engine's truncation has
-      // nothing a replay could check. The report says so, rather than reading
-      // like a step the cache never reached the write for.
-      if (baselineLostToTruncation && this.info !== undefined) {
-        this.info = { ...this.info, notRecorded: 'observation-truncated' };
-      }
-      return 'skipped';
-    }
+    if (!this.host.traceEligible || this.startNodes === undefined || recorder.recordedCount === 0) return 'skipped';
     const observation = await probeScreen(this.host, 'held-still');
     if (!this.host.traceEligible || observation?.kind !== 'semantic') return 'skipped';
+    if (observation.truncated === true) return this.skipTruncatedRecording();
     const { nodes: endNodes, path: endPath } = observation;
     // The start capture may predate a secret this step resolved; read with
     // the ledger as it is now, an unchanged node is no delta.
     const startNodes = redactNodesAgain(this.startNodes, this.redaction);
     const routeMoved = this.startPath !== undefined && endPath !== undefined && !sameRoute(this.startPath, endPath);
-    const delta = describeDelta(startNodes, endNodes, routeMoved);
+    const delta = this.startTruncated && !routeMoved
+      ? describeDeltaFromTruncatedStart(startNodes, endNodes, inputTargets(recorder.recordedActions), templateValueMatcher(this.options.templates))
+      : describeDelta(startNodes, endNodes, routeMoved);
+    if (delta === undefined) return this.skipTruncatedRecording();
     if (delta.appeared.length === 0 && delta.gone.length === 0 && !routeMoved) return 'no-change';
     const trace = recorder.finalize({
       executor: this.options.executor,
@@ -680,6 +671,7 @@ export class StepTraceSession {
       ...(endPath === undefined ? {} : { endPath }),
       endAnchors: delta.appeared,
       goneAnchors: delta.gone,
+      ...(this.startTruncated ? { baselineTruncated: true } : {}),
       // How long the app took to show its end state after the last action,
       // plus room for a slower day: the budget a replay waits for the anchors
       // to return. Measured from the last action, not the step's start: the
@@ -719,6 +711,12 @@ export class StepTraceSession {
       ...(note === undefined ? {} : { note }),
     });
     return 'staged';
+  }
+
+  /** Reports a partial end or a partial start that could not prove a delta. */
+  private skipTruncatedRecording(): 'skipped' {
+    if (this.info !== undefined) this.info = { ...this.info, notRecorded: 'observation-truncated' };
+    return 'skipped';
   }
 
   /**
@@ -796,7 +794,7 @@ function actionList(actions: readonly number[]): string {
  */
 interface EndStateCheck {
   readonly matches: boolean;
-  readonly failure?: 'already-showing' | DeltaMismatch;
+  readonly failure?: 'already-showing' | 'truncated-baseline' | 'truncated-end' | DeltaMismatch;
 }
 
 /**
@@ -811,6 +809,8 @@ function stopDetail(outcome: ReplayOutcome, reason: HandOffReason, trace: Action
   if (reason === 'end-mismatch') {
     const where = trace.endPath === undefined ? '' : ` on ${trace.endPath}`;
     if (failure === 'already-showing') return `every recorded action ran, but the recorded outcome already showed${where} before the replay acted there, so nothing proves the replay produced it`;
+    if (failure === 'truncated-baseline') return `every recorded action ran, but the partial baseline${where} did not establish a recorded change`;
+    if (failure === 'truncated-end') return `every recorded action ran, but the end screen${where} remained truncated`;
     const expected = (trace.endAnchors ?? []).slice(0, 2).map(describeAnchor);
     const what = failure !== undefined ? mismatchParts(failure) : expected.length > 0 ? `expected ${expected.join(', ')}` : '';
     return `every recorded action ran, but the recorded end state did not show${where}${what === '' ? '' : `: ${what}`}`;
@@ -851,8 +851,8 @@ function mismatchParts(mismatch: DeltaMismatch): string {
 }
 
 /** The controls a trace's input actions set a value or a state on: their changed anchors echo the input. */
-function inputTargets(trace: ActionTrace): TraceTargetDescriptor[] {
-  return trace.actions.flatMap((action) => ('target' in action && action.target !== undefined ? [action.target] : []));
+function inputTargets(actions: readonly RecordedAction[]): TraceTargetDescriptor[] {
+  return actions.flatMap((action) => ('target' in action && action.target !== undefined ? [action.target] : []));
 }
 
 /**
