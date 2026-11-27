@@ -51,6 +51,29 @@ describe('describeDeltaFromTruncatedStart', () => {
     expect(delta?.gone.slice(0, 2)).toEqual([{ role: 'status', name: 'Marker', text: 'empty' }, target]);
   });
 
+  it('prefers result leaves and stable descriptors while retaining a bare template ID and the input echo', () => {
+    const id = '1234';
+    const bareId = node('bare', { role: 'cell', name: id });
+    const timedResult = node('timed', { role: 'link', name: `Item ${id} at 12:34` });
+    const namedResult = node('named', { role: 'link', name: `Item ${id}` });
+    const filled = node('filled', { ...target, value: id });
+    const timedRows = Array.from({ length: MAX_TRACE_ANCHORS }, (_, index) => {
+      const cell = node(`cell${index}`, { role: 'cell', name: id });
+      return node(`row${index}`, { role: 'row', name: `Item ${id} at 12:34, row ${index}`, children: [cell] });
+    });
+    const plainRow = node('plain', { role: 'row', name: `Item ${id} details`, children: [namedResult] });
+    const end = nodes([...timedRows, timedResult, bareId, filled, plainRow, namedResult]);
+
+    const delta = describeDeltaFromTruncatedStart(nodes([input]), end, [target], templateValueMatcher([{ pointer: '/id', value: id }]));
+    expect(delta?.appeared.slice(0, 5)).toEqual([
+      { ...target, value: id },
+      { role: 'link', name: `Item ${id}` },
+      { role: 'link', name: `Item ${id} at 12:34` },
+      { role: 'cell', name: id },
+      { role: 'row', name: `Item ${id} details` },
+    ]);
+  });
+
   it('accepts a changed input only when the complete end proves a separate removal', () => {
     const end = nodes([node('filled', { ...target, value: '42' }), ...newRows]);
     const withoutTemplates = templateValueMatcher([]);

@@ -1237,6 +1237,8 @@ async function recordSearch(start: SemanticScreen, end: SemanticScreen, id = '12
 
 describe('recording from a truncated baseline', () => {
   const dense = cacheScreen('/list', [itemInput, denseRow], true);
+  const newRow = { ...denseRow, name: 'Row B' };
+  const updatedList = cacheScreen('/list', [itemInput, newRow], true);
   const typed = { ...itemInput, value: '1234' };
   const found = { ref: { id: 'status', revision: 'r2' }, role: 'status', name: 'Found 1234' };
   const filtered = cacheScreen('/list', [typed, found]);
@@ -1252,6 +1254,15 @@ describe('recording from a truncated baseline', () => {
     expect((await settleStagedTraces(cache, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true })).get(1)).toEqual({ write: 'saved' });
 
     const { session } = searchFlow(cache, dense, [{ ...filtered, truncated: true }, filtered]);
+    expect(await session.begin()).toMatchObject({ status: 'passed' });
+    expect(session.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 2, totalActions: 2 });
+  });
+
+  it('replays a new outcome when different rows occupy the partial start', async () => {
+    const { cache } = await recordSearch(dense, filtered);
+    const trace = stagedTrace(cache);
+    expect(trace.goneAnchors).toContainEqual({ role: 'button', name: 'Row A' });
+    const { session } = searchFlow(entryContext(trace), updatedList, [filtered]);
     expect(await session.begin()).toMatchObject({ status: 'passed' });
     expect(session.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 2, totalActions: 2 });
   });
@@ -1295,7 +1306,7 @@ describe('recording from a truncated baseline', () => {
     const trace = stagedTrace(cache);
     expect(trace.baselineTruncated).toBe(true);
     expect(trace.endAnchors).toContainEqual({ role: 'link', name: 'Item {{param:/id}}' });
-    const warm = searchFlow(entryContext(trace), dense, [result('2002')], options('2002'));
+    const warm = searchFlow(entryContext(trace), updatedList, [result('2002')], options('2002'));
     expect(await warm.session.begin()).toMatchObject({ status: 'passed' });
     expect(warm.type).toHaveBeenCalledWith({ id: 'item' }, '2002');
     expect(warm.session.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 2, totalActions: 2 });
@@ -1305,7 +1316,6 @@ describe('recording from a truncated baseline', () => {
     ['the end still has a truncated tree with matching anchors', dense, { ...filtered, truncated: true } as const, /remained truncated/],
     ['the complete start already showed the outcome', filtered, filtered, /already showed/],
     ['the complete end shows the wrong result', dense, cacheScreen('/list', [typed, { ...found, name: 'No results' }]), /missing status "Found 1234"/],
-    ['the partial start shows none of the recorded removals', cacheScreen('/list', [itemInput], true), filtered, /partial baseline/],
   ] as const)('hands off when %s', async (_label, start, end, detail) => {
     const { cache } = await recordSearch(dense, filtered);
     const { session } = searchFlow(entryContext(stagedTrace(cache)), start, [end]);
@@ -1313,6 +1323,20 @@ describe('recording from a truncated baseline', () => {
     expect(session.cacheInfo).toMatchObject({ mode: 'agent-concluded', reason: 'end-mismatch', replayedActions: 2 });
     expect(session.cacheInfo?.detail).toMatch(detail);
     expect(session.replayedPrefix?.stopReason).toBe('end-mismatch');
+  });
+
+  it('requires a witnessed removal when the only end anchor echoes the input', async () => {
+    const end = cacheScreen('/list', [typed]);
+    const { cache } = await recordSearch(dense, end);
+    const trace = stagedTrace(cache);
+    expect(trace.endAnchors).toEqual([{ role: 'textbox', name: 'Item ID', value: '1234' }]);
+    const unchangedList = searchFlow(entryContext(trace), dense, [end]).session;
+    expect(await unchangedList.begin()).toMatchObject({ status: 'passed' });
+
+    const { session } = searchFlow(entryContext(trace), updatedList, [end]);
+    expect(await session.begin()).toBeUndefined();
+    expect(session.cacheInfo).toMatchObject({ mode: 'agent-concluded', reason: 'end-mismatch', replayedActions: 2 });
+    expect(session.cacheInfo?.detail).toMatch(/partial baseline/);
   });
 
   it.each([false, true])('does not write a truncated end for a start with truncated=%s', async (truncated) => {
@@ -1355,16 +1379,13 @@ describe('recording from a truncated baseline', () => {
   it('does not accept an uncovered footer when the partial baseline already showed the recorded outcome', async () => {
     const footer: SemanticNode = { ref: { id: 'footer', revision: 'r2' }, role: 'contentinfo', name: 'Help' };
     const end = cacheScreen('/list', [typed, found, footer]);
-    const before = cacheScreen('/list', [itemInput], true);
-    const { cache } = await recordSearch(before, end);
+    const { cache } = await recordSearch(dense, end);
     const trace = stagedTrace(cache);
-    const changed = searchFlow(entryContext(trace), before, [end]).session;
-    expect(await changed.begin()).toMatchObject({ status: 'passed' });
-
-    const alreadyShowing = cacheScreen('/list', [itemInput, found], true);
+    const alreadyShowing = cacheScreen('/list', [itemInput, newRow, found], true);
     const { session } = searchFlow(entryContext(trace), alreadyShowing, [end]);
     expect(await session.begin()).toBeUndefined();
     expect(session.cacheInfo).toMatchObject({ reason: 'end-mismatch', replayedActions: 2 });
+    expect(session.cacheInfo?.detail).toMatch(/partial baseline/);
   });
 
   it('keeps old traces on their original replay rules', async () => {

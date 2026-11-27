@@ -181,15 +181,24 @@ function orderedSide(
   const otherShapes = new Set(other.map((anchor) => countShape(anchor.descriptor)));
   const volatile = (anchor: TraceTargetDescriptor) => isVolatileAnchor(anchor, (count) => routeMoved || otherShapes.has(countShape(count)));
   const announcements: AnchorNode[] = [];
-  const preferred: AnchorNode[] = [];
+  const preferred: { leaves: AnchorNode[]; containers: AnchorNode[] } = { leaves: [], containers: [] };
+  const volatilePreferred: typeof preferred = { leaves: [], containers: [] };
   const leaves: AnchorNode[] = [];
   const containers: AnchorNode[] = [];
   for (const anchor of nodes) {
     if (isAnnouncement(anchor.descriptor)) announcements.push(anchor);
-    else if (prioritize?.(anchor.descriptor) === true) preferred.push(anchor);
-    else (anchor.leaf ? leaves : containers).push(anchor);
+    else if (prioritize?.(anchor.descriptor) === true) {
+      const group = volatile(anchor.descriptor) ? volatilePreferred : preferred;
+      (anchor.leaf ? group.leaves : group.containers).push(anchor);
+    } else (anchor.leaf ? leaves : containers).push(anchor);
   }
-  const all = [...announcements, ...preferred, ...leaves, ...containers];
+  const all = [
+    ...announcements,
+    ...preferred.leaves, ...volatilePreferred.leaves,
+    ...preferred.containers, ...volatilePreferred.containers,
+    ...leaves, ...containers,
+  ];
+  // A preferred descriptor may carry a bare parameter ID or a control echo.
   const stable = all.filter((anchor) => isAlert(anchor.descriptor) || prioritize?.(anchor.descriptor) === true || !volatile(anchor.descriptor));
   return (stable.length > 0 ? stable : all).slice(0, MAX_TRACE_ANCHORS).map((anchor) => anchor.descriptor);
 }
@@ -353,15 +362,14 @@ export function deltaEvidenced(
   const gone = delta.goneAnchors ?? [];
   const echoes = inputEchoes(appeared, gone, inputTargets);
   const baseline = projectAnchors(baselineNodes);
-  // A partial baseline can witness a removal. When the recording has one,
-  // require that evidence rather than inferring absence from omitted nodes.
   if (truncatedBaseline !== undefined) {
-    const removals = gone.filter((anchor) => !echoes(anchor));
-    if (removals.length > 0) return removals.some((anchor) => anchorIn(anchor, baseline));
-    // A footer missing from this partial look cannot prove a change when
-    // the actual outcome was already visible.
+    // The list rows may have changed since recording. A strong outcome can
+    // still prove the change. An input echo needs a witnessed removal.
     const outcome = truncatedStartOutcome(inputTargets, truncatedBaseline.hasTemplateValue);
-    return appeared.some((anchor) => outcome(anchor) && !anchorIn(anchor, baseline));
+    return (
+      appeared.some((anchor) => outcome(anchor) && !anchorIn(anchor, baseline)) ||
+      gone.some((anchor) => !echoes(anchor) && anchorIn(anchor, baseline))
+    );
   }
   const outcome = [...appeared, ...gone].some((anchor) => !echoes(anchor));
   const counted = (anchor: TraceTargetDescriptor) => !outcome || !echoes(anchor);

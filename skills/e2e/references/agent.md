@@ -384,7 +384,8 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   A truncated end tree or a partial start without proof of change reports
   `step.cache.notRecorded: observation-truncated`. A partial start can record
   if a complete end proves a route change or an outcome. Replay of that entry
-  needs a complete end tree too.
+  needs a complete end tree. On the same route, a new announcement or
+  `unique()` result can prove the change even if the list rows have changed.
 - `e2e init` gitignores `.e2e/cache/`; remove that line to commit entries
   and share replays with CI and teammates (CI stays `read-only` unless
   `cache: 'read-write'` is set).

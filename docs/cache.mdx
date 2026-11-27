@@ -67,11 +67,11 @@ step can report `step.cache.notRecorded` with `param-collision` (see
 means the engine cut the end tree or a partial start did not prove a change.
 The step also reports `observationTruncated: true`.
 
-A step can record a partial start if it reaches a complete end tree and
-changes route or proves an outcome on the same route. Proof can be a new
-announcement, a result carrying a `unique()` value, or a changed input and
-a separate removal. Replay checks the recorded anchors on a complete end
-tree.
+A partial start can record if a complete end proves a route change, a new
+announcement, a `unique()` result, or a changed input with a separate
+removal. Replay checks the recorded anchors on a complete end tree. On the
+same route, replay from a partial start needs a new announcement or
+`unique()` result, or a recorded removal that was visible at the start.
 
 A failing attempt still saves the steps verified before the failure. It
 deletes unverified entries and the replays involved in the failure. A custom store needs a `delete` method for this. Cancelling
