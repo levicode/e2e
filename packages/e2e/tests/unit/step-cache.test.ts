@@ -849,6 +849,31 @@ describe('StepTraceSession', () => {
     session.record({ name: 'pressKey', key: 'Enter' });
     await session.conclude('passed', 'saved');
     expect(cache.staged).toEqual([]);
+    expect(session.cacheInfo).toMatchObject({ mode: 'missed', reason: 'no-entry' });
+    expect(session.cacheInfo).not.toHaveProperty('notRecorded');
+  });
+
+  it('names the engine truncation when that is why a passing step has no recording', async () => {
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    const session = makeSession(cache, { ...makeHost(['/form', '/form'], [[], [savedMarker]]), currentScreenTruncated: true });
+    await session.begin();
+    session.actionStarting();
+    session.record({ name: 'pressKey', key: 'Enter' });
+    await session.conclude('passed', 'saved');
+    expect(cache.staged).toEqual([]);
+    expect(session.cacheInfo).toMatchObject({ mode: 'missed', reason: 'no-entry', notRecorded: 'observation-truncated' });
+  });
+
+  it('does not name truncation when the baseline was lost for another reason', async () => {
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    const elsewhere = { kind: 'semantic' as const, path: '/elsewhere', viewport: { width: 800, height: 600 }, nodes: nodeMap([savedMarker]) };
+    const session = makeSession(cache, { ...makeHost(['/form', '/form'], [[], [savedMarker]]), currentScreen: elsewhere, currentScreenTruncated: true });
+    await session.begin();
+    session.actionStarting();
+    session.record({ name: 'pressKey', key: 'Enter' });
+    await session.conclude('passed', 'saved');
+    expect(cache.staged).toEqual([]);
+    expect(session.cacheInfo).not.toHaveProperty('notRecorded');
   });
 
   it('denies an old end anchor that appeared while replay was locating its first action', async () => {

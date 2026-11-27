@@ -283,6 +283,12 @@ const CACHE_WRITE_TEXT: Readonly<Record<NonNullable<StepCacheRecord['write']>, s
   'not-written': 'recording not saved: the cache store did not write it',
 };
 
+/** Why a step that passed in place was never recorded, in words. */
+const NOT_RECORDED_TEXT: Readonly<Record<NonNullable<StepCacheInfo['notRecorded']>, string>> = {
+  'param-collision': 'nothing recorded: a unique() value collides with another param',
+  'observation-truncated': 'nothing recorded: the engine truncated the semantic tree before the first action, so there is no baseline a replay could check',
+};
+
 /** Where an app log line came from, as the page names it. */
 const APP_SOURCE_TEXT: Readonly<Record<AppLogSource, string>> = {
   console: 'console',
@@ -383,7 +389,7 @@ function cacheLine(cache: StepCacheRecord, cacheDir: string | undefined): string
             cache.write === 'saved-unreplayable' && cache.writeDetail !== undefined ? `: ${cell(cache.writeDetail, MAX_DETAIL_CHARS)}` : ''
           }`,
         ]),
-    ...(cache.notRecorded === 'param-collision' ? ['nothing recorded: a unique() value collides with another param'] : []),
+    ...(cache.notRecorded === undefined ? [] : [NOT_RECORDED_TEXT[cache.notRecorded]]),
   ];
   const entry = cache.entry === undefined || cacheDir === undefined ? '' : ` (${code(`${cacheDir}/${cache.entry}.json`, MAX_PATH_CHARS)})`;
   return `${parts.join('; ')}${entry}`;

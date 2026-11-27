@@ -591,12 +591,15 @@ export interface StepCacheInfo {
    */
   derived?: DerivedReason;
   /**
-   * Why a passing step that ran live was still not recorded, when the cause
-   * is the call itself: `param-collision` when a `unique()` value equals, is
-   * spelled inside, or is the encoded form of another param's value, so the
-   * recording could not tell which param a recorded input came from.
+   * Why a passing step that ran live was still not recorded: `param-collision`
+   * when a `unique()` value equals, is spelled inside, or is the encoded form
+   * of another param's value, so the recording could not tell which param a
+   * recorded input came from; `observation-truncated` when the engine's tree
+   * left nodes out before the step's first action, so the step had no start
+   * baseline to record its effect from (the step's `observationTruncated` is
+   * true too).
    */
-  notRecorded?: 'param-collision';
+  notRecorded?: 'param-collision' | 'observation-truncated';
   replayedActions: number;
   totalActions: number;
   /** The step's cache key, which names its entry file (`<cache.dir>/<entry>.json` in the file store). */

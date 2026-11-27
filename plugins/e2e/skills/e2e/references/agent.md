@@ -381,7 +381,10 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   creates no entry either. A step whose
   `unique()` value equals, is spelled inside, or is the encoded form of
   another param's value is not recorded either (`step.cache.notRecorded`:
-  `param-collision`).
+  `param-collision`), and one whose first action came after the engine
+  truncated the tree is not recorded for lack of a start baseline
+  (`step.cache.notRecorded`: `observation-truncated`, with
+  `observationTruncated: true` on the step).
 - `e2e init` gitignores `.e2e/cache/`; remove that line to commit entries
   and share replays with CI and teammates (CI stays `read-only` unless
   `cache: 'read-write'` is set).
