@@ -534,9 +534,11 @@ export class StepTraceSession {
     // ledger as it is now, an unchanged node is no change.
     const baseline = baselineScreen(screens, arrived.path);
     const baselineNodes = baseline === undefined ? undefined : redactNodesAgain(baseline.nodes, this.redaction);
-    const truncatedBaseline = trace.baselineTruncated === true && baseline?.truncated === true;
+    const truncatedBaseline = trace.baselineTruncated === true && baseline?.truncated === true
+      ? { hasTemplateValue: templateValueMatcher(this.options.templates) }
+      : undefined;
     if (!deltaEvidenced(trace, baselineNodes, inputTargets(trace.actions), truncatedBaseline)) {
-      if (truncatedBaseline) return { matches: false, failure: 'truncated-baseline' };
+      if (truncatedBaseline !== undefined) return { matches: false, failure: 'truncated-baseline' };
       // A recording with no delta fails the evidence too, but nothing of it
       // showed before the replay acted: that is the generic detail.
       const recorded = (trace.endAnchors?.length ?? 0) > 0 || (trace.goneAnchors?.length ?? 0) > 0;

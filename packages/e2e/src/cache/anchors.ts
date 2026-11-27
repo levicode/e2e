@@ -115,18 +115,26 @@ export function describeDeltaFromTruncatedStart(
   hasTemplateValue: (text: string) => boolean,
 ): StepDelta | undefined {
   const { start, end, appeared, gone } = comparedAnchors(startNodes, endNodes);
-  const acted = new Set(inputTargets.map(identityKey));
   const echoes = inputEchoes(appeared.map((anchor) => anchor.descriptor), gone.map((anchor) => anchor.descriptor), inputTargets);
-  const outcome = (anchor: TraceTargetDescriptor) =>
-    isAnnouncement(anchor) || (
-      !acted.has(identityKey(anchor)) &&
-      [anchor.name, anchor.text, anchor.value].some((text) => text !== undefined && hasTemplateValue(text))
-    );
+  const outcome = truncatedStartOutcome(inputTargets, hasTemplateValue);
   const endAnchors = orderedSide(appeared, start, false, (anchor) => outcome(anchor) || echoes(anchor));
   const goneAnchors = orderedSide(gone, end, false, (anchor) => isAnnouncement(anchor) || echoes(anchor));
   const recordedEchoes = inputEchoes(endAnchors, goneAnchors, inputTargets);
   if (!endAnchors.some(outcome) && !(endAnchors.some(recordedEchoes) && goneAnchors.some((anchor) => !echoes(anchor)))) return undefined;
   return { appeared: endAnchors, gone: goneAnchors };
+}
+
+/** A positive outcome that counts when the engine only read part of the starting tree. */
+function truncatedStartOutcome(
+  inputTargets: readonly TraceTargetDescriptor[],
+  hasTemplateValue: (text: string) => boolean,
+): (anchor: TraceTargetDescriptor) => boolean {
+  const acted = new Set(inputTargets.map(identityKey));
+  return (anchor) =>
+    isAnnouncement(anchor) || (
+      !acted.has(identityKey(anchor)) &&
+      [anchor.name, anchor.text, anchor.value].some((text) => text !== undefined && hasTemplateValue(text))
+    );
 }
 
 /** Projects both screens and finds the distinct anchors each side contributes. */
@@ -338,7 +346,7 @@ export function deltaEvidenced(
   delta: RecordedDelta,
   baselineNodes: ReadonlyMap<string, RedactedNode> | undefined,
   inputTargets: readonly TraceTargetDescriptor[],
-  truncatedBaseline = false,
+  truncatedBaseline?: { readonly hasTemplateValue: (text: string) => boolean },
 ): boolean {
   if (baselineNodes === undefined) return true;
   const appeared = delta.endAnchors ?? [];
@@ -347,9 +355,13 @@ export function deltaEvidenced(
   const baseline = projectAnchors(baselineNodes);
   // A partial baseline can witness a removal. When the recording has one,
   // require that evidence rather than inferring absence from omitted nodes.
-  if (truncatedBaseline) {
+  if (truncatedBaseline !== undefined) {
     const removals = gone.filter((anchor) => !echoes(anchor));
     if (removals.length > 0) return removals.some((anchor) => anchorIn(anchor, baseline));
+    // A footer missing from this partial look cannot prove a change when
+    // the actual outcome was already visible.
+    const outcome = truncatedStartOutcome(inputTargets, truncatedBaseline.hasTemplateValue);
+    return appeared.some((anchor) => outcome(anchor) && !anchorIn(anchor, baseline));
   }
   const outcome = [...appeared, ...gone].some((anchor) => !echoes(anchor));
   const counted = (anchor: TraceTargetDescriptor) => !outcome || !echoes(anchor);

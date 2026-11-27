@@ -1352,6 +1352,21 @@ describe('recording from a truncated baseline', () => {
     }
   });
 
+  it('does not accept an uncovered footer when the partial baseline already showed the recorded outcome', async () => {
+    const footer: SemanticNode = { ref: { id: 'footer', revision: 'r2' }, role: 'contentinfo', name: 'Help' };
+    const end = cacheScreen('/list', [typed, found, footer]);
+    const before = cacheScreen('/list', [itemInput], true);
+    const { cache } = await recordSearch(before, end);
+    const trace = stagedTrace(cache);
+    const changed = searchFlow(entryContext(trace), before, [end]).session;
+    expect(await changed.begin()).toMatchObject({ status: 'passed' });
+
+    const alreadyShowing = cacheScreen('/list', [itemInput, found], true);
+    const { session } = searchFlow(entryContext(trace), alreadyShowing, [end]);
+    expect(await session.begin()).toBeUndefined();
+    expect(session.cacheInfo).toMatchObject({ reason: 'end-mismatch', replayedActions: 2 });
+  });
+
   it('keeps old traces on their original replay rules', async () => {
     const start = cacheScreen('/list', [itemInput, denseRow]);
     const { cache } = await recordSearch(start, filtered);
