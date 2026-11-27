@@ -1,7 +1,8 @@
 /** Anchors: the step's delta as relocatable descriptors, both what appeared and what vanished. */
 
 import { describe, expect, it } from 'vitest';
-import { deltaEvidenced, deltaMismatch, describeDelta } from '../../src/cache/anchors.ts';
+import { deltaEvidenced, deltaMismatch, describeDelta, describeDeltaFromTruncatedStart } from '../../src/cache/anchors.ts';
+import { templateValueMatcher } from '../../src/cache/template.ts';
 import { MAX_TRACE_ANCHORS } from '../../src/cache/trace.ts';
 import type { RedactedNode } from '../../src/agent/observation.ts';
 import type { SemanticNode } from '../../src/engine/surface.ts';
@@ -24,6 +25,40 @@ const emptyMarker = node('m0', { role: 'status', name: 'Marker', text: 'empty' }
 const savedMarker = node('m1', { role: 'status', name: 'Marker', text: 'saved' });
 const row = node('r', { role: 'link', name: 'PB-Twin-Alpha', selector: 'a[href="/pb/1"]' });
 const toast = node('t', { text: 'Playbook saved' });
+
+describe('describeDeltaFromTruncatedStart', () => {
+  const target = { role: 'textbox', name: 'Item ID' };
+  const input = node('i', target);
+  const oldRows = Array.from({ length: MAX_TRACE_ANCHORS + 2 }, (_, i) => node(`old${i}`, { role: 'listitem', name: `Old row ${i}` }));
+  const newRows = Array.from({ length: MAX_TRACE_ANCHORS + 2 }, (_, i) => node(`new${i}`, { role: 'listitem', name: `New row ${i}` }));
+
+  it('keeps announcements, changed controls, and encoded result values ahead of unrelated rows', () => {
+    const start = nodes([...oldRows, input, emptyMarker]);
+    const end = nodes([
+      ...newRows,
+      node('filled', { ...target, value: 'item 12' }),
+      node('result', { role: 'link', name: 'Result item%2012' }),
+      savedMarker,
+    ]);
+    const delta = describeDeltaFromTruncatedStart(start, end, [target], templateValueMatcher([{ pointer: '/id', value: 'item 12' }]));
+    expect(delta?.appeared).toHaveLength(MAX_TRACE_ANCHORS);
+    expect(delta?.gone).toHaveLength(MAX_TRACE_ANCHORS);
+    expect(delta?.appeared.slice(0, 3)).toEqual([
+      { role: 'status', name: 'Marker', text: 'saved' },
+      { ...target, value: 'item 12' },
+      { role: 'link', name: 'Result item%2012' },
+    ]);
+    expect(delta?.gone.slice(0, 2)).toEqual([{ role: 'status', name: 'Marker', text: 'empty' }, target]);
+  });
+
+  it('accepts a changed input only when the complete end proves a separate removal', () => {
+    const end = nodes([node('filled', { ...target, value: '42' }), ...newRows]);
+    const withoutTemplates = templateValueMatcher([]);
+    expect(describeDeltaFromTruncatedStart(nodes([input]), end, [target], withoutTemplates)).toBeUndefined();
+    expect(describeDeltaFromTruncatedStart(nodes([input, oldRows[0]!]), end, [target], withoutTemplates)?.gone)
+      .toEqual([target, { role: 'listitem', name: 'Old row 0' }]);
+  });
+});
 
 describe('describeDelta', () => {
   it('keeps what appeared and what vanished, compared by descriptor rather than by id', () => {

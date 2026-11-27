@@ -49,7 +49,14 @@ export type ObservedScreen = {
    */
   readonly path?: string;
 } & (
-  | { readonly kind: 'semantic'; readonly nodes: ObservedNodes; readonly identityScope?: string; readonly replayControls?: NonNullable<EngineSnapshot['replayControls']> }
+  | {
+      readonly kind: 'semantic';
+      readonly nodes: ObservedNodes;
+      /** The engine left out nodes, independently of the model's text limit. */
+      readonly truncated?: true;
+      readonly identityScope?: string;
+      readonly replayControls?: NonNullable<EngineSnapshot['replayControls']>;
+    }
   | { readonly kind: 'pixels' }
 );
 

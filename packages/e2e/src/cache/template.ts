@@ -193,6 +193,12 @@ export function templatesCollide(params: Readonly<Record<string, JsonValue>> | u
   return literal.some((plain) => marked.some((slot) => plain.text.includes(slot.text)));
 }
 
+/** Tests for a slot's value in any spelling the recording would substitute. */
+export function templateValueMatcher(templates: readonly ParamTemplate[]): (text: string) => boolean {
+  const values = spellings(templates);
+  return (text) => values.some((value) => text.includes(value.text));
+}
+
 /**
  * Replaces every occurrence of each template's value in `text`, in any of
  * its spellings, with the matching placeholder. Longer texts are claimed

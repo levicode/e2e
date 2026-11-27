@@ -380,11 +380,11 @@ matches. Misses and hand-offs use the model; `agent.assert`,
   nothing, since the tree leaves it out. A step recording no actions
   creates no entry either. A step whose
   `unique()` value equals, is spelled inside, or is the encoded form of
-  another param's value is not recorded either (`step.cache.notRecorded`:
-  `param-collision`), and one whose first action came after the engine
-  truncated the tree is not recorded for lack of a start baseline
-  (`step.cache.notRecorded`: `observation-truncated`, with
-  `observationTruncated: true` on the step).
+  another param's value reports `step.cache.notRecorded: param-collision`.
+  A truncated end tree or a partial start without proof of change reports
+  `step.cache.notRecorded: observation-truncated`. A partial start can record
+  if a complete end proves a route change or an outcome. Replay of that entry
+  needs a complete end tree too.
 - `e2e init` gitignores `.e2e/cache/`; remove that line to commit entries
   and share replays with CI and teammates (CI stays `read-only` unless
   `cache: 'read-write'` is set).

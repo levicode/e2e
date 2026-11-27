@@ -14,6 +14,7 @@ import { AgentError } from '../../src/agent/error.ts';
 import type { ExecutorActions } from '../../src/agent/executor.ts';
 import type { SettleMode } from '../../src/agent/settle-policy.ts';
 import type { RedactedNode } from '../../src/agent/observation.ts';
+import type { SemanticScreen } from '../../src/agent/replay.ts';
 import type { SemanticNode } from '../../src/engine/surface.ts';
 import { redacted, redactedNodes } from '../helpers/redacted.ts';
 import type { JsonValue } from '../../src/types.ts';
@@ -855,7 +856,12 @@ describe('StepTraceSession', () => {
 
   it('names the engine truncation when that is why a passing step has no recording', async () => {
     const cache = fakeContext(async () => ({ status: 'miss' }));
-    const session = makeSession(cache, { ...makeHost(['/form', '/form'], [[], [savedMarker]]), currentScreenTruncated: true });
+    const cut = cacheScreen('/form', [], true);
+    const session = makeSession(cache, {
+      ...makeHost([]),
+      observe: async () => cut,
+      currentScreen: cut,
+    });
     await session.begin();
     session.actionStarting();
     session.record({ name: 'pressKey', key: 'Enter' });
@@ -866,8 +872,8 @@ describe('StepTraceSession', () => {
 
   it('does not name truncation when the baseline was lost for another reason', async () => {
     const cache = fakeContext(async () => ({ status: 'miss' }));
-    const elsewhere = { kind: 'semantic' as const, path: '/elsewhere', viewport: { width: 800, height: 600 }, nodes: nodeMap([savedMarker]) };
-    const session = makeSession(cache, { ...makeHost(['/form', '/form'], [[], [savedMarker]]), currentScreen: elsewhere, currentScreenTruncated: true });
+    const elsewhere = cacheScreen('/elsewhere', [savedMarker], true);
+    const session = makeSession(cache, { ...makeHost(['/form', '/form'], [[], [savedMarker]]), currentScreen: elsewhere });
     await session.begin();
     session.actionStarting();
     session.record({ name: 'pressKey', key: 'Enter' });
@@ -1183,6 +1189,181 @@ function entryContext(overrides: Partial<ActionTrace>): AgentCacheContext {
     staged: [],
   };
 }
+
+const itemInput: SemanticNode = { ref: { id: 'item', revision: 'r1' }, role: 'textbox', name: 'Item ID' };
+const denseRow: SemanticNode = { ref: { id: 'row', revision: 'r1' }, role: 'button', name: 'Row A' };
+
+/** A cache observation with the engine's completeness flag. */
+function cacheScreen(path: string, nodes: readonly SemanticNode[], truncated = false): SemanticScreen {
+  return { kind: 'semantic', path, nodes: nodeMap(nodes), viewport: { width: 800, height: 600 }, ...(truncated ? { truncated: true } : {}) };
+}
+
+/** Runs the same search through the live recorder and the replay action hooks. */
+function searchFlow(cache: AgentCacheContext, start: SemanticScreen, ends: readonly SemanticScreen[], params: Partial<StepCacheOptions> = {}) {
+  let screen = start;
+  let remainingEnds: SemanticScreen[] = [];
+  const type = vi.fn(async (_target: unknown, value: string) => {
+    session.actionStarting();
+    session.record({ name: 'type', node: redacted(itemInput), value });
+  });
+  const press = vi.fn(async () => {
+    session.actionStarting();
+    session.record({ name: 'press', node: redacted(itemInput), key: 'Enter' });
+    remainingEnds = [...ends];
+  });
+  const session = makeSession(cache, {
+    ...makeHost([]),
+    observe: async () => { screen = remainingEnds.shift() ?? screen; return screen; },
+    get currentScreen() { return screen; },
+    remainingMs: () => ends.length > 1 ? 5_000 : 50,
+    actions: { type, press } as unknown as ExecutorActions,
+  }, params);
+  return { session, type, press };
+}
+
+/** Records a search in a cache with no prior entry. */
+async function recordSearch(start: SemanticScreen, end: SemanticScreen, id = '1234', params: Partial<StepCacheOptions> = {}) {
+  const cache = {
+    ...fakeContext(async () => ({ status: 'miss' })),
+    store: new FileCacheStore({ directory: await tempDir('e2e-truncated-start-'), maxBytes: MAX_CACHE_WIRE_BYTES, writable: true }),
+  };
+  const { session, type, press } = searchFlow(cache, start, [end], params);
+  await session.begin();
+  await type({ id: 'item' }, id);
+  await press();
+  await session.conclude('passed', 'searched by ID');
+  return { cache, session };
+}
+
+describe('recording from a truncated baseline', () => {
+  const dense = cacheScreen('/list', [itemInput, denseRow], true);
+  const typed = { ...itemInput, value: '1234' };
+  const found = { ref: { id: 'status', revision: 'r2' }, role: 'status', name: 'Found 1234' };
+  const filtered = cacheScreen('/list', [typed, found]);
+
+  it('saves a same-route search and replays after the end tree becomes complete', async () => {
+    const { cache } = await recordSearch(dense, filtered);
+    const trace = stagedTrace(cache);
+    expect(trace).toMatchObject({
+      baselineTruncated: true,
+      endAnchors: [{ role: 'status', name: 'Found 1234' }, { role: 'textbox', name: 'Item ID', value: '1234' }],
+      goneAnchors: [{ role: 'textbox', name: 'Item ID' }, { role: 'button', name: 'Row A' }],
+    });
+    expect((await settleStagedTraces(cache, { lastVerifiedStepIndex: 2, implicatesUnconfirmed: true })).get(1)).toEqual({ write: 'saved' });
+
+    const { session } = searchFlow(cache, dense, [{ ...filtered, truncated: true }, filtered]);
+    expect(await session.begin()).toMatchObject({ status: 'passed' });
+    expect(session.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 2, totalActions: 2 });
+  });
+
+  it('saves and replays a link from a truncated list to a complete detail route', async () => {
+    const link: SemanticNode = { ref: { id: 'detail', revision: 'r1' }, role: 'link', name: 'Detail' };
+    const start = cacheScreen('/list', [link, denseRow], true);
+    const end = cacheScreen('/detail/123', [{ ref: { id: 'title', revision: 'r2' }, role: 'heading', name: 'Item details' }]);
+    const flow = (cache: AgentCacheContext) => {
+      let screen = start;
+      const tap = async () => {
+        session.actionStarting();
+        session.record({ name: 'tap', node: redacted(link) });
+        screen = end;
+      };
+      const session = makeSession(cache, {
+        ...makeHost([]), observe: async () => screen, get currentScreen() { return screen; },
+        actions: { tap } as unknown as ExecutorActions,
+      });
+      return { session, tap };
+    };
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    const cold = flow(cache);
+    await cold.session.begin();
+    await cold.tap();
+    await cold.session.conclude('passed', 'opened detail');
+    const trace = stagedTrace(cache);
+    expect(trace).toMatchObject({ baselineTruncated: true, endPath: '/detail/123' });
+    const warm = flow(entryContext(trace)).session;
+    expect(await warm.begin()).toMatchObject({ status: 'passed' });
+    expect(warm.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 1, totalActions: 1 });
+  });
+
+  it('keeps a unique result anchor and verifies the next call\'s ID', async () => {
+    const options = (id: string) => ({ params: { id }, templates: [{ pointer: '/id', value: id }] });
+    const result = (id: string) => cacheScreen('/list', [
+      { ...itemInput, value: id },
+      { ref: { id: 'result', revision: 'r2' }, role: 'link', name: `Item ${id}` },
+    ]);
+    const { cache } = await recordSearch(dense, result('1001'), '1001', options('1001'));
+    const trace = stagedTrace(cache);
+    expect(trace.baselineTruncated).toBe(true);
+    expect(trace.endAnchors).toContainEqual({ role: 'link', name: 'Item {{param:/id}}' });
+    const warm = searchFlow(entryContext(trace), dense, [result('2002')], options('2002'));
+    expect(await warm.session.begin()).toMatchObject({ status: 'passed' });
+    expect(warm.type).toHaveBeenCalledWith({ id: 'item' }, '2002');
+    expect(warm.session.cacheInfo).toMatchObject({ mode: 'self-finalized', replayedActions: 2, totalActions: 2 });
+  });
+
+  it.each([
+    ['the end still has a truncated tree with matching anchors', dense, { ...filtered, truncated: true } as const, /remained truncated/],
+    ['the complete start already showed the outcome', filtered, filtered, /already showed/],
+    ['the complete end shows the wrong result', dense, cacheScreen('/list', [typed, { ...found, name: 'No results' }]), /missing status "Found 1234"/],
+    ['the partial start shows none of the recorded removals', cacheScreen('/list', [itemInput], true), filtered, /partial baseline/],
+  ] as const)('hands off when %s', async (_label, start, end, detail) => {
+    const { cache } = await recordSearch(dense, filtered);
+    const { session } = searchFlow(entryContext(stagedTrace(cache)), start, [end]);
+    expect(await session.begin()).toBeUndefined();
+    expect(session.cacheInfo).toMatchObject({ mode: 'agent-concluded', reason: 'end-mismatch', replayedActions: 2 });
+    expect(session.cacheInfo?.detail).toMatch(detail);
+    expect(session.replayedPrefix?.stopReason).toBe('end-mismatch');
+  });
+
+  it.each([false, true])('does not write a truncated end for a start with truncated=%s', async (truncated) => {
+    const start = cacheScreen('/list', [itemInput, denseRow], truncated);
+    const { cache, session } = await recordSearch(start, { ...filtered, truncated: true });
+    expect(cache.staged).toEqual([]);
+    expect(session.cacheInfo).toMatchObject({ reason: 'no-entry', notRecorded: 'observation-truncated' });
+  });
+
+  it('restores the baseline when a first dispatch known not to have run is rolled back', async () => {
+    const cache = fakeContext(async () => ({ status: 'miss' }));
+    let observed = dense;
+    let before = cacheScreen('/other', [itemInput]);
+    const session = makeSession(cache, {
+      ...makeHost([]),
+      observe: async () => observed,
+      get currentScreen() { return before; },
+    });
+    await session.begin();
+    session.actionStarting()!();
+    before = dense;
+    expect(session.actionStarting()).toBeDefined();
+    session.record({ name: 'press', node: redacted(itemInput), key: 'Enter' });
+    observed = filtered;
+    await session.conclude('passed', 'searched');
+    expect(stagedTrace(cache).baselineTruncated).toBe(true);
+  });
+
+  it('does not write a footer or a unique input echo as the only outcome', async () => {
+    const footer: SemanticNode = { ref: { id: 'footer', revision: 'r2' }, role: 'contentinfo', name: 'Help' };
+    const start = cacheScreen('/list', [itemInput], true);
+    const options = { params: { id: '1234' }, templates: [{ pointer: '/id', value: '1234' }] };
+    for (const field of [itemInput, typed]) {
+      const { cache, session } = await recordSearch(start, cacheScreen('/list', [field, footer]), '1234', options);
+      expect(cache.staged).toEqual([]);
+      expect(session.cacheInfo).toMatchObject({ reason: 'no-entry', notRecorded: 'observation-truncated' });
+    }
+  });
+
+  it('keeps old traces on their original replay rules', async () => {
+    const start = cacheScreen('/list', [itemInput, denseRow]);
+    const { cache } = await recordSearch(start, filtered);
+    const trace = stagedTrace(cache);
+    expect(trace).not.toHaveProperty('baselineTruncated');
+    const legacy = searchFlow(entryContext(trace), start, [{ ...filtered, truncated: true }]).session;
+    expect(await legacy.begin()).toMatchObject({ status: 'passed' });
+    const partial = searchFlow(entryContext(trace), dense, [filtered]).session;
+    expect(await partial.begin()).toBeUndefined();
+    expect(partial.cacheInfo).toMatchObject({ reason: 'end-mismatch', replayedActions: 2 });
+  });
+});
 
 describe('destination path settling', () => {
   it('self-finalizes when the recorded destination arrives after the replayed action', async () => {

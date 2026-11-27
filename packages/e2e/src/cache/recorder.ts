@@ -91,6 +91,11 @@ export class TraceRecorder {
     return this.actions.length;
   }
 
+  /** Actions whose targets can identify input echoes on either side of the delta. */
+  get recordedActions(): readonly RecordedAction[] {
+    return this.actions;
+  }
+
   /** When the last action or gap was recorded; undefined before the first. */
   get lastActionAtMs(): number | undefined {
     return this.lastActionAt;
@@ -158,6 +163,7 @@ export class TraceRecorder {
     readonly endAnchors?: readonly TraceTargetDescriptor[];
     /** The other side of the same delta: what was on screen at the start and gone at the end. */
     readonly goneAnchors?: readonly TraceTargetDescriptor[];
+    readonly baselineTruncated?: true;
     /** How long the recorded run took to reach its end state, plus margin. */
     readonly endWaitMs?: number;
     /** The key's context as this run derived it; see `ActionTrace.keyedBy`. */
@@ -190,6 +196,7 @@ export class TraceRecorder {
       ...(conclusion.goneAnchors === undefined || conclusion.goneAnchors.length === 0
         ? {}
         : { goneAnchors: conclusion.goneAnchors }),
+      ...(conclusion.baselineTruncated === undefined ? {} : { baselineTruncated: conclusion.baselineTruncated }),
       ...(conclusion.endWaitMs === undefined
         ? {}
         : { endWaitMs: Math.min(MAX_TRACE_END_WAIT_MS, Math.max(0, Math.round(conclusion.endWaitMs))) }),

@@ -435,6 +435,8 @@ export interface ActionTrace {
    * anchor to check.
    */
   readonly goneAnchors?: readonly TraceTargetDescriptor[];
+  /** A partial starting tree requires a complete end observation to replay. */
+  readonly baselineTruncated?: true;
   /**
    * How long the recorded run took from its first action to its passing
    * verdict, plus a margin. A replay waits up to this long for the anchors to
@@ -560,6 +562,8 @@ function readActionTrace(document: unknown): ActionTrace | undefined {
   if (raw['endPath'] !== undefined && endPath === undefined) return undefined;
   const truncated = raw['truncated'];
   if (truncated !== undefined && typeof truncated !== 'boolean') return undefined;
+  const baselineTruncated = raw['baselineTruncated'];
+  if (baselineTruncated !== undefined && baselineTruncated !== true) return undefined;
 
   const endWaitMs = raw['endWaitMs'];
   if (
@@ -594,6 +598,7 @@ function readActionTrace(document: unknown): ActionTrace | undefined {
     ...(endPath === undefined ? {} : { endPath }),
     ...(endAnchors.length === 0 ? {} : { endAnchors }),
     ...(goneAnchors.length === 0 ? {} : { goneAnchors }),
+    ...(baselineTruncated === undefined ? {} : { baselineTruncated }),
     ...(endWaitMs === undefined ? {} : { endWaitMs }),
     ...(truncated === undefined ? {} : { truncated }),
     ...(keyedBy === undefined ? {} : { keyedBy }),

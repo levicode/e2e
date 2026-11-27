@@ -96,13 +96,53 @@ export function describeDelta(
   endNodes: ReadonlyMap<string, RedactedNode>,
   routeMoved: boolean,
 ): StepDelta {
+  const { start, end, appeared, gone } = comparedAnchors(startNodes, endNodes);
+  return {
+    appeared: orderedSide(appeared, start, routeMoved),
+    gone: orderedSide(gone, end, routeMoved),
+  };
+}
+
+/**
+ * A same-route delta from a partial baseline. An end node the engine did
+ * not list at the start could have been there all along. Keep the delta only
+ * when the selected anchors include an outcome beyond a newly uncovered node.
+ */
+export function describeDeltaFromTruncatedStart(
+  startNodes: ReadonlyMap<string, RedactedNode>,
+  endNodes: ReadonlyMap<string, RedactedNode>,
+  inputTargets: readonly TraceTargetDescriptor[],
+  hasTemplateValue: (text: string) => boolean,
+): StepDelta | undefined {
+  const { start, end, appeared, gone } = comparedAnchors(startNodes, endNodes);
+  const acted = new Set(inputTargets.map(identityKey));
+  const echoes = inputEchoes(appeared.map((anchor) => anchor.descriptor), gone.map((anchor) => anchor.descriptor), inputTargets);
+  const outcome = (anchor: TraceTargetDescriptor) =>
+    isAnnouncement(anchor) || (
+      !acted.has(identityKey(anchor)) &&
+      [anchor.name, anchor.text, anchor.value].some((text) => text !== undefined && hasTemplateValue(text))
+    );
+  const endAnchors = orderedSide(appeared, start, false, (anchor) => outcome(anchor) || echoes(anchor));
+  const goneAnchors = orderedSide(gone, end, false, (anchor) => isAnnouncement(anchor) || echoes(anchor));
+  const recordedEchoes = inputEchoes(endAnchors, goneAnchors, inputTargets);
+  if (!endAnchors.some(outcome) && !(endAnchors.some(recordedEchoes) && goneAnchors.some((anchor) => !echoes(anchor)))) return undefined;
+  return { appeared: endAnchors, gone: goneAnchors };
+}
+
+/** Projects both screens and finds the distinct anchors each side contributes. */
+function comparedAnchors(
+  startNodes: ReadonlyMap<string, RedactedNode>,
+  endNodes: ReadonlyMap<string, RedactedNode>,
+) {
   const start = projectAnchors(startNodes);
   const end = projectAnchors(endNodes);
   const startKeys = new Set(start.map((anchor) => anchor.key));
   const endKeys = new Set(end.map((anchor) => anchor.key));
   return {
-    appeared: deltaSide(end, start, (anchor) => startKeys.has(anchor.key), routeMoved),
-    gone: deltaSide(start, end, (anchor) => endKeys.has(anchor.key) || anchorIn(anchor.descriptor, end), routeMoved),
+    start,
+    end,
+    appeared: distinctSide(end, (anchor) => startKeys.has(anchor.key)),
+    gone: distinctSide(start, (anchor) => endKeys.has(anchor.key) || anchorIn(anchor.descriptor, end)),
   };
 }
 
@@ -113,28 +153,42 @@ interface AnchorNode {
   readonly leaf: boolean;
 }
 
-/** The side of the delta `nodes` holds and `other` does not (`inOther`), ordered and capped. */
-function deltaSide(
+/** The nodes unique to one side of the delta, in document order. */
+function distinctSide(nodes: readonly AnchorNode[], inOther: (anchor: AnchorNode) => boolean): AnchorNode[] {
+  const seen = new Set<string>();
+  return nodes.filter((anchor) => {
+    if (seen.has(anchor.key) || inOther(anchor)) return false;
+    seen.add(anchor.key);
+    return true;
+  });
+}
+
+/** Caps a side of the delta, giving announcements and any required evidence the first slots. */
+function orderedSide(
   nodes: readonly AnchorNode[],
   other: readonly AnchorNode[],
-  inOther: (anchor: AnchorNode) => boolean,
   routeMoved: boolean,
+  prioritize?: (anchor: TraceTargetDescriptor) => boolean,
 ): TraceTargetDescriptor[] {
   const otherShapes = new Set(other.map((anchor) => countShape(anchor.descriptor)));
   const volatile = (anchor: TraceTargetDescriptor) => isVolatileAnchor(anchor, (count) => routeMoved || otherShapes.has(countShape(count)));
-  const seen = new Set<string>();
   const announcements: AnchorNode[] = [];
+  const preferred: AnchorNode[] = [];
   const leaves: AnchorNode[] = [];
   const containers: AnchorNode[] = [];
   for (const anchor of nodes) {
-    if (seen.has(anchor.key) || inOther(anchor)) continue;
-    seen.add(anchor.key);
-    const role = anchor.descriptor.role ?? '';
-    (ANNOUNCEMENT_ROLES.has(role) ? announcements : anchor.leaf ? leaves : containers).push(anchor);
+    if (isAnnouncement(anchor.descriptor)) announcements.push(anchor);
+    else if (prioritize?.(anchor.descriptor) === true) preferred.push(anchor);
+    else (anchor.leaf ? leaves : containers).push(anchor);
   }
-  const all = [...announcements, ...leaves, ...containers];
-  const stable = all.filter((anchor) => isAlert(anchor.descriptor) || !volatile(anchor.descriptor));
+  const all = [...announcements, ...preferred, ...leaves, ...containers];
+  const stable = all.filter((anchor) => isAlert(anchor.descriptor) || prioritize?.(anchor.descriptor) === true || !volatile(anchor.descriptor));
   return (stable.length > 0 ? stable : all).slice(0, MAX_TRACE_ANCHORS).map((anchor) => anchor.descriptor);
+}
+
+/** Whether the app announces an outcome using the anchor's role. */
+function isAnnouncement(anchor: TraceTargetDescriptor): boolean {
+  return anchor.role !== undefined && ANNOUNCEMENT_ROLES.has(anchor.role);
 }
 
 /**
@@ -284,20 +338,37 @@ export function deltaEvidenced(
   delta: RecordedDelta,
   baselineNodes: ReadonlyMap<string, RedactedNode> | undefined,
   inputTargets: readonly TraceTargetDescriptor[],
+  truncatedBaseline = false,
 ): boolean {
   if (baselineNodes === undefined) return true;
   const appeared = delta.endAnchors ?? [];
   const gone = delta.goneAnchors ?? [];
-  const targets = new Set(inputTargets.map(identityKey));
-  const changed = new Set(appeared.map(identityKey).filter((key) => gone.some((anchor) => identityKey(anchor) === key)));
-  const echoes = (anchor: TraceTargetDescriptor) => changed.has(identityKey(anchor)) && targets.has(identityKey(anchor));
+  const echoes = inputEchoes(appeared, gone, inputTargets);
+  const baseline = projectAnchors(baselineNodes);
+  // A partial baseline can witness a removal. When the recording has one,
+  // require that evidence rather than inferring absence from omitted nodes.
+  if (truncatedBaseline) {
+    const removals = gone.filter((anchor) => !echoes(anchor));
+    if (removals.length > 0) return removals.some((anchor) => anchorIn(anchor, baseline));
+  }
   const outcome = [...appeared, ...gone].some((anchor) => !echoes(anchor));
   const counted = (anchor: TraceTargetDescriptor) => !outcome || !echoes(anchor);
-  const baseline = projectAnchors(baselineNodes);
   return (
     appeared.some((anchor) => counted(anchor) && !anchorIn(anchor, baseline)) ||
     gone.some((anchor) => counted(anchor) && anchorIn(anchor, baseline))
   );
+}
+
+/** Identifies controls the trace acted on which changed value or state across the delta. */
+function inputEchoes(
+  appeared: readonly TraceTargetDescriptor[],
+  gone: readonly TraceTargetDescriptor[],
+  inputTargets: readonly TraceTargetDescriptor[],
+): (anchor: TraceTargetDescriptor) => boolean {
+  const targets = new Set(inputTargets.map(identityKey));
+  const end = new Set(appeared.map(identityKey).filter((key) => targets.has(key)));
+  const changed = new Set(gone.map(identityKey).filter((key) => end.has(key)));
+  return (anchor) => changed.has(identityKey(anchor));
 }
 
 /** A control's key without what a step sets on it, its value and states: the same control before and after. */
